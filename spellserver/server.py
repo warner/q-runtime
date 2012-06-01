@@ -1,4 +1,4 @@
-import os, base64, time, json
+import base64, time, json
 from binascii import hexlify, unhexlify
 from twisted.python import log
 from twisted.application import service
@@ -6,7 +6,7 @@ from twisted.web.client import getPage
 from foolscap.api import eventually
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
-from . import util
+from . import util, objects
 
 
 
@@ -320,11 +320,7 @@ class Server(service.MultiService):
         return "I am poked"
 
     def create_object(self):
-        objid = util.to_ascii(os.urandom(32), "obj0-", encoding="base32")
-        c = self.db.cursor()
-        c.execute("INSERT INTO `memory` VALUES (?,?)",
-                  (objid, json.dumps({})))
-        self.db.commit()
+        objid = objects.create_object(self.db)
         return objid
 
 class Power:

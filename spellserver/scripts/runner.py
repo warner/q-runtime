@@ -64,6 +64,12 @@ class PokeOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
         ("message", "m", "", "Message to send"),
         ]
 
+class CreateObjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    pass
+class ListObjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    pass
+
+
 class TestOptions(usage.Options):
     def parseArgs(self, *test_args):
         if not test_args:
@@ -86,6 +92,8 @@ class Options(usage.Options):
                    ("gossip", None, GossipOptions, "Populate URL tables"),
 
                    ("poke", None, PokeOptions, "Trigger event loop"),
+                   ("create-object", None, CreateObjectOptions, "Make object"),
+                   ("list-objects", None, ListObjectOptions, "List objects"),
 
                    ("test", None, TestOptions, "Run unit tests"),
                    ]
@@ -126,6 +134,14 @@ def poke(*args):
     from .poke import poke
     return poke(*args)
 
+def create_object(*args):
+    from .object_commands import create_object
+    return create_object(*args)
+
+def list_objects(*args):
+    from .object_commands import list_objects
+    return list_objects(*args)
+
 def test(so, stdout, stderr):
     import unittest
     if os.path.exists("_test"):
@@ -141,6 +157,8 @@ DISPATCH = {"create-node": create_node,
             "restart": restart,
             "gossip": gossip,
             "open": open_control_panel,
+            "create-object": create_object,
+            "list-objects": list_objects,
             "poke": poke,
             "test": test,
             }
