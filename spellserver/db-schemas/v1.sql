@@ -58,3 +58,10 @@ CREATE TABLE `memory`
  `objid` VARCHAR(256) UNIQUE, -- "obj0-base32.."
  `data_json` STRING
 );
+
+CREATE TABLE `methods`
+(
+ `methid` VARCHAR(256) UNIQUE, -- "meth0-base32.."
+ `objid` VARCHAR(256), -- "obj0-base32.."
+ `code` STRING
+);

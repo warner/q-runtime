@@ -68,6 +68,11 @@ class CreateObjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options)
     pass
 class ListObjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
     pass
+class CreateMethodOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    def parseArgs(self, basedir, objid, codefile):
+        BasedirArgument.parseArgs(self, basedir)
+        self.objid = objid
+        self.codefile = codefile
 
 
 class TestOptions(usage.Options):
@@ -94,6 +99,7 @@ class Options(usage.Options):
                    ("poke", None, PokeOptions, "Trigger event loop"),
                    ("create-object", None, CreateObjectOptions, "Make object"),
                    ("list-objects", None, ListObjectOptions, "List objects"),
+                   ("create-method", None, CreateMethodOptions, "Make method"),
 
                    ("test", None, TestOptions, "Run unit tests"),
                    ]
@@ -142,6 +148,10 @@ def list_objects(*args):
     from .object_commands import list_objects
     return list_objects(*args)
 
+def create_method(*args):
+    from .object_commands import create_method
+    return create_method(*args)
+
 def test(so, stdout, stderr):
     import unittest
     if os.path.exists("_test"):
@@ -159,6 +169,7 @@ DISPATCH = {"create-node": create_node,
             "open": open_control_panel,
             "create-object": create_object,
             "list-objects": list_objects,
+            "create-method": create_method,
             "poke": poke,
             "test": test,
             }

@@ -31,3 +31,13 @@ def list_objects(so, out, err):
         print >>out, "%s: %d" % (objid, len(data_json))
     print "%d objects total" % len(objs)
     return 0
+
+def create_method(so, out, err):
+    db = get_db(so, err)
+    if db == 1:
+        return db
+    objid = so.objid
+    code = open(so.codefile, "r").read()
+    methid = objects.create_method(db, objid, code)
+    print "new methid: %s" % methid
+    return 0

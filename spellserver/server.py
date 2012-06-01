@@ -159,22 +159,36 @@ class Server(service.MultiService):
         if vatids:
             self.trigger_inbound() # more work to do, later
 
+    def execute(self, objid, code, args, from_vatid):
+        print "EVAL <%s>" % (code,)
+        print "ARGS", args
+        code = compile(code, "<from vatid %s>" % from_vatid, "exec")
+        power = Power()
+        power.memory = self.get_data(objid)
+        namespace = {"log": log.msg}
+        eval(code, namespace, namespace)
+        rc = namespace["call"](args, power)
+        del rc # rc is dropped
+        self.set_data(objid, power.memory)
+
     def process_request(self, msg, from_vatid):
         # really, you should ignore from_vatid
         print "PROCESS", msg
         command = str(msg["command"])
         if command == "execute":
             objid = str(msg["objid"])
-            print "EVAL <%s>" % (msg["code"],)
-            code = compile(msg["code"], "<from vat %s>" % from_vatid, "exec")
-            args = msg["args"]
-            power = Power()
-            power.memory = self.get_data(objid)
-            namespace = {"log": log.msg}
-            eval(code, namespace, namespace)
-            rc = namespace["call"](args, power)
-            del rc # rc is dropped
-            self.set_data(objid, power.memory)
+            self.execute(objid, msg["code"], msg["args"], from_vatid)
+            return
+        if command == "invoke":
+            methid = str(msg["methid"])
+            c = self.db.cursor()
+            c.execute("SELECT `objid`,`code` FROM `methods` WHERE `methid`=?",
+                      (methid,))
+            res = c.fetchall()
+            if not res:
+                raise KeyError("unknown objid %s" % objid)
+            objid, code = res[0]
+            self.execute(objid, code, msg["args"], from_vatid)
             return
         pass
 
@@ -300,6 +314,12 @@ class Server(service.MultiService):
                "args": json.dumps(args)}
         self.send_message(vatid, json.dumps(msg))
 
+    def send_invoke(self, vatid, methid, args):
+        msg = {"command": "invoke",
+               "methid": methid,
+               "args": args}
+        self.send_message(vatid, json.dumps(msg))
+
     def poke(self, body):
         if body.startswith("send "):
             cmd, vatid = body.strip().split()
@@ -315,6 +335,11 @@ class Server(service.MultiService):
             args = {"a": 12}
             self.send_execute(vatid, objid, code, args)
             return "execute sent"
+        if body.startswith("invoke "):
+            cmd, vatid, methid = body.strip().split()
+            args = {"a": 12}
+            self.send_invoke(vatid, methid, args)
+            return "invoke sent"
         self.trigger_inbound()
         self.trigger_outbound()
         return "I am poked"
