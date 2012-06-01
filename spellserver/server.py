@@ -1,5 +1,6 @@
 import os, base64, time, json
 from binascii import hexlify, unhexlify
+from twisted.python import log
 from twisted.application import service
 from twisted.web.client import getPage
 from foolscap.api import eventually
@@ -161,6 +162,34 @@ class Server(service.MultiService):
     def process_request(self, msg, from_vatid):
         # really, you should ignore from_vatid
         print "PROCESS", msg
+        command = str(msg["command"])
+        if command == "execute":
+            objid = str(msg["objid"])
+            print "EVAL <%s>" % (msg["code"],)
+            code = compile(msg["code"], "<from vat %s>" % from_vatid, "exec")
+            args = msg["args"]
+            power = Power()
+            power.memory = self.get_data(objid)
+            namespace = {"log": log.msg}
+            eval(code, namespace, namespace)
+            rc = namespace["call"](args, power)
+            del rc # rc is dropped
+            self.set_data(objid, power.memory)
+            return
+        pass
+
+    def get_data(self, objid):
+        c = self.db.cursor()
+        c.execute("SELECT `data_json` FROM `memory` WHERE `objid`=?",
+                  (objid,))
+        data = c.fetchone()[0]
+        return json.loads(data)
+
+    def set_data(self, objid, data):
+        c = self.db.cursor()
+        c.execute("UPDATE `memory` SET `data_json`=? WHERE `objid`=?",
+                  (json.dumps(data), objid,))
+        self.db.commit()
 
     def send_message(self, their_vatid, msg):
         c = self.db.cursor()
@@ -264,14 +293,28 @@ class Server(service.MultiService):
         assert len(nonce) == crypto_box_NONCEBYTES
         return (pubkey_s, pubkey, nonce, encbody)
 
+    def send_execute(self, vatid, objid, code, args):
+        msg = {"command": "execute",
+               "objid": objid,
+               "code": code,
+               "args": json.dumps(args)}
+        self.send_message(vatid, json.dumps(msg))
+
     def poke(self, body):
-        if body.startswith("send"):
+        if body.startswith("send "):
             cmd, vatid = body.strip().split()
             self.send_message(vatid, json.dumps({"command": "hello"}))
             return "message sent"
-        if body.startswith("make-object"):
+        if body.startswith("create-object"):
             objid = self.create_object()
             return "created object %s" % objid
+        if body.startswith("execute "):
+            cmd, vatid, objid = body.strip().split()
+            code = ("def call(args, power):\n"
+                    "    log('I have power!')\n")
+            args = {"a": 12}
+            self.send_execute(vatid, objid, code, args)
+            return "execute sent"
         self.trigger_inbound()
         self.trigger_outbound()
         return "I am poked"
@@ -283,3 +326,6 @@ class Server(service.MultiService):
                   (objid, json.dumps({})))
         self.db.commit()
         return objid
+
+class Power:
+    pass
