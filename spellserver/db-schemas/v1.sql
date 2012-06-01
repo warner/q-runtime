@@ -50,7 +50,7 @@ CREATE TABLE `inbound_messages` -- undelivered messages
 (
  `from_vatid` STRING, -- "pk0-base32.."
  `msgnum` INTEGER,
- `message_b64` STRING -- decrypted
+ `message_json` STRING -- decrypted
 );
 
 CREATE TABLE `memory`

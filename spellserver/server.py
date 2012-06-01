@@ -108,8 +108,9 @@ class Server(service.MultiService):
             return "ack (old)"
         print "current: %d" % nonce_number
         # add the message to the inbound queue. Once safe, ack.
+        msg_json = msg.decode("utf-8")
         c.execute("INSERT INTO `inbound_messages` VALUES (?,?,?)",
-                  (their_vatid, next_msgnum, base64.b64encode(msg)))
+                  (their_vatid, next_msgnum, msg_json))
         c.execute("UPDATE `inbound_msgnums`"
                   " SET `next_msgnum`=?"
                   " WHERE `from_vatid`=?",
@@ -127,7 +128,39 @@ class Server(service.MultiService):
         self.inbound_triggered = False
         # we are now responsible for processing all queued messages, or
         # calling trigger_inbound() to reschedule ourselves for later
-        pass
+
+        c = self.db.cursor()
+        c.execute("SELECT `from_vatid` FROM `inbound_messages`")
+        vatids = sorted([res[0] for res in c.fetchall()])
+        if not vatids:
+            return
+        vatid = vatids[0] # service First-er vat first, no particular reason
+        c.execute("SELECT `msgnum` FROM `inbound_messages`"
+                  " WHERE `from_vatid` = ?", (vatid,))
+        msgnum = sorted([res[0] for res in c.fetchall()])[0]
+        c.execute("SELECT `message_json` FROM `inbound_messages`"
+                  " WHERE `from_vatid`=? AND `msgnum`=?",
+                  (vatid, msgnum))
+        (msg_json,) = c.fetchone()
+        msg = json.loads(msg_json)
+
+        self.process_request(msg, vatid)
+
+        # if that completes, we can retire the message
+        c.execute("DELETE FROM `inbound_messages`"
+                  " WHERE `from_vatid`=? and `msgnum`=?",
+                  (vatid, msgnum))
+        self.db.commit()
+
+        # now, do we have more work to do?
+        c.execute("SELECT `from_vatid` FROM `inbound_messages`")
+        vatids = [res[0] for res in c.fetchall()]
+        if vatids:
+            self.trigger_inbound() # more work to do, later
+
+    def process_request(self, msg, from_vatid):
+        # really, you should ignore from_vatid
+        print "PROCESS", msg
 
     def send_message(self, their_vatid, msg):
         c = self.db.cursor()
@@ -234,7 +267,7 @@ class Server(service.MultiService):
     def poke(self, body):
         if body.startswith("send"):
             cmd, vatid = body.strip().split()
-            self.send_message(vatid, "hello")
+            self.send_message(vatid, json.dumps({"command": "hello"}))
             return "message sent"
         if body.startswith("make-object"):
             objid = self.create_object()
