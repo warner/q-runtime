@@ -1,51 +1,50 @@
-import re
-import collections
-import weakref
-import json
+import base64, time
+from binascii import hexlify, unhexlify
 from twisted.application import service
-from twisted.python import log
-from twisted.internet import protocol, reactor
-from twisted.protocols import basic
-import nacl
-from .netstring import make_netstring, split_netstrings
-from . import invitation, util
+from twisted.web.client import getPage
+from foolscap.api import eventually
+from nacl import crypto_box, crypto_box_open, \
+     crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
+from . import util
 
+
+
+# resending messages: we use Waterken's "retry-forever" style. Ideally, we'd
+# like messages to any given Vat to be resent on an exponential backoff
+# timer: the first time we try to send a message and get a rejected
+# connection, we should wait 5 seconds before trying again, then 10 seconds,
+# then 20, etc, capping the backoff at an hour or two. In addition, each time
+# a new message is added to the queue for that Vat, we should make an
+# immediate attempt (but not affect the timer). Any success resets the timer.
+# The pending (unACKed) messages live in the database. So what this will
+# really want is something that looks at the DB, computes a next-retry-time
+# for each VatID that has pending messages, takes the minimum of those times,
+# then sets a timer to wake up at that point. Maybe the whole retry schedule
+# should be put in the DB, so if this server sleeps through the attempts, it
+# wakes up doing the slow-poll instead of the fast-poll.
+
+# also, consider the differences between TCP connection failures and
+# delayed/lost ACKs. We actually care about the ACK. But we need to give them
+# a reasonable amount of time to receive and store the message, especially
+# for large messages. (scheduling a retry 5 seconds after we start sending a
+# multi-minute message would be a disaster). So, do an HTTP send, if it
+# succeeds (i.e. the encrypted response contains an ACK), then the message is
+# retired. If and when it fails, start the timer. (this allows Vats to stall
+# forever, but that's their perogative, and resending early to such a vat
+# won't do any good).
 
 class Server(service.MultiService):
-    def __init__(self, db, pubkey, privkey):
+    def __init__(self, db, pubkey_s, privkey_s):
         service.MultiService.__init__(self)
         self.db = db
-        c = self.db.cursor()
 
-        self.pubkey = pubkey
-        self.privkey = privkey
+        self.vatid = pubkey_s
+        self.pubkey = util.from_ascii(pubkey_s, "pk0-", encoding="base32")
+        self.privkey_s = privkey_s
+        self.privkey = util.from_ascii(privkey_s, "sk0-", encoding="base32")
 
-        # resending messages: we use Waterken's "retry-forever" style.
-        # Ideally, we'd like messages to any given Vat to be resent on an
-        # exponential backoff timer: the first time we try to send a message
-        # and get a rejected connection, we should wait 5 seconds before
-        # trying again, then 10 seconds, then 20, etc, capping the backoff at
-        # an hour or two. In addition, each time a new message is added to
-        # the queue for that Vat, we should make an immediate attempt (but
-        # not affect the timer). Any success resets the timer. The pending
-        # (unACKed) messages live in the database. So what this will really
-        # want is something that looks at the DB, computes a next-retry-time
-        # for each VatID that has pending messages, takes the minimum of
-        # those times, then sets a timer to wake up at that point. Maybe the
-        # whole retry schedule should be put in the DB, so if this server
-        # sleeps through the attempts, it wakes up doing the slow-poll
-        # instead of the fast-poll.
-
-        # also, consider the differences between TCP connection failures and
-        # delayed/lost ACKs. We actually care about the ACK. But we need to
-        # give them a reasonable amount of time to receive and store the
-        # message, especially for large messages. (scheduling a retry 5
-        # seconds after we start sending a multi-minute message would be a
-        # disaster). So, do an HTTP send, if it succeeds (i.e. the encrypted
-        # response contains an ACK), then the message is retired. If and when
-        # it fails, start the timer. (this allows Vats to stall forever, but
-        # that's their perogative, and resending early to such a vat won't do
-        # any good).
+        self.inbound_triggered = False
+        self.outbound_triggered = False
 
     # nonce management: we need four virtual channels: one pair in each
     # direction. The Request channels deliver boxed request messages
@@ -61,121 +60,181 @@ class Server(service.MultiService):
     # The Request messages are sent in the body of an HTTP request. The
     # Response messages are returned in the HTTP response.
 
-    def inbound_message(self, pubkey, nonce, encbody):
-        assert len(pubkey)==nacl.crypto_box_PUBLICKEYBYTES, len(pubkey)
-        assert len(nonce)==nacl.crypto_box_NONCEBYTES, len(nonce)
+    def inbound_message(self, body):
+        their_vatid, their_pubkey, nonce, encbody = self.parse_message(body)
+        # their_vatid is "pk0-base32..", while their_pubkey is binary
         nonce_number = int(hexlify(nonce), 16)
+        if their_vatid < self.vatid:
+            offset = 2 # they are First, I am Second, msg is First->Second
+        else:
+            offset = 0 # I am First, they are Second, msg is Second->First
+        assert nonce_number % 4 == offset, "wrong nonce type %d %d" % (nonce_number, offset)
+        msg = crypto_box_open(encbody, nonce, their_pubkey, self.privkey)
+        resp = self.process_message(their_vatid, nonce_number, offset, msg)
+        r_nonce = self.number_to_nonce(nonce_number+1)
+        return ",".join(["v0",
+                         util.to_ascii(self.pubkey, "pk0-", encoding="base32"),
+                         util.to_ascii(r_nonce, encoding="base32"),
+                         crypto_box(resp, r_nonce, their_pubkey, self.privkey)])
+
+    def number_to_nonce(self, number):
+        nonce = unhexlify("%048x" % number)
+        assert len(nonce) == crypto_box_NONCEBYTES
+        return nonce
+
+    def process_message(self, their_vatid, nonce_number, offset, msg):
+        # the message is genuine, but might be a replay, or from the future
         c = self.db.cursor()
-        c.execute("SELECT next_msgnum FROM inbound_msgnums LIMIT 1"
-                  " WHERE from_vatid = ?", (pubkey,))
-        (next_msgnum,) = c.fetchone()
-        expected_nonce = self.make_nonce(next_msgnum, pubkey)
+        c.execute("SELECT next_msgnum FROM inbound_msgnums"
+                  " WHERE from_vatid=? LIMIT 1", (their_vatid,))
+        data = c.fetchall()
+        if data:
+            next_msgnum = data[0][0]
+        else:
+            c.execute("INSERT INTO inbound_msgnums VALUES (?,?)",
+                      (their_vatid, 0))
+            self.db.commit()
+            next_msgnum = 0
+        expected_nonce = 4*next_msgnum+offset
         # If the nonce is old, we remember processing this message, so just
         # ACK it. If the nonce is too new, signal an error: that either means
         # we've been rolled back, or they're sending nonces from the future.
         # If the nonce is just right, process the message.
         if nonce_number > expected_nonce:
-            
-            
+            print "future: got %d, expected %d" % (nonce_number, expected_nonce)
+            raise ValueError("begone ye futuristic demon message!")
+        if nonce_number < expected_nonce:
+            print "old: got %d, current is %d" % (nonce_number, expected_nonce)
+            return "ack (old)"
+        print "current: %d" % nonce_number
+        # add the message to the inbound queue. Once safe, ack.
+        c.execute("INSERT INTO `inbound_messages` VALUES (?,?,?)",
+                  (their_vatid, next_msgnum, base64.b64encode(msg)))
+        c.execute("UPDATE `inbound_msgnums`"
+                  " SET `next_msgnum`=?"
+                  " WHERE `from_vatid`=?",
+                  (next_msgnum+1, their_vatid))
+        self.db.commit()
+        self.trigger_inbound()
+        return "ack (new)"
 
+    def trigger_inbound(self):
+        if not self.inbound_triggered:
+            self.inbound_triggered = True
+            eventually(self.deliver_inbound_messages)
 
-        expected_nonce = self.parent.
-        if self.check_inbound_nonce(pubkey, nonce_number):
-            
-        msg = nacl.crypto_box_open(encbody, nonce, pubkey, self.privkey)
+    def deliver_inbound_messages(self):
+        self.inbound_triggered = False
+        # we are now responsible for processing all queued messages, or
+        # calling trigger_inbound() to reschedule ourselves for later
+        pass
 
-    def make_nonce(self, msgnum, their_pubkey):
-        if self.pubkey > their_pubkey:
-            return 2*msgnum+1
+    def send_message(self, their_vatid, msg):
+        c = self.db.cursor()
+        c.execute("SELECT `next_msgnum` FROM `outbound_msgnums`"
+                  " WHERE `to_vatid`=? LIMIT 1", (their_vatid,))
+        data = c.fetchall()
+        if data:
+            next_msgnum = data[0][0]
         else:
-            return 2*msgnum+0
+            c.execute("INSERT INTO outbound_msgnums VALUES (?,?)",
+                      (their_vatid, 0))
+            self.db.commit()
+            next_msgnum = 0
+        # add the boxed message to the outbound queue
+        if their_vatid < self.vatid:
+            offset = 0 # they are First, I am Second, msg is Second->First
+        else:
+            offset = 2 # I am First, they are Second, msg is First->Second
+        nonce = self.number_to_nonce(4*next_msgnum+offset)
+        their_pubkey = util.from_ascii(their_vatid, "pk0-", encoding="base32")
+        boxed = ",".join(["v0",
+                          util.to_ascii(self.pubkey, "pk0-", encoding="base32"),
+                          util.to_ascii(nonce, encoding="base32"),
+                          crypto_box(msg, nonce, their_pubkey, self.privkey)])
+        c.execute("INSERT INTO `outbound_messages` VALUES (?,?,?,?)",
+                  (their_vatid, 0, next_msgnum, base64.b64encode(boxed)))
+        c.execute("UPDATE `outbound_msgnums`"
+                  " SET `next_msgnum`=?"
+                  " WHERE `to_vatid`=?",
+                  (next_msgnum+1, their_vatid))
+        self.db.commit()
+        self.trigger_outbound()
 
-    def check_inbound_nonce(self, vatid, nonce):
+    def trigger_outbound(self):
+        if not self.outbound_triggered:
+            self.outbound_triggered = True
+            eventually(self.deliver_outbound_messages)
 
-    def control_sendInvitation(self, petname):
-        # in the medium-size code protocol, the invitation code I is just a
-        # random string.
-        print "sendInvitation", petname
-        pk_s, sk_s = self.create_keypair()
-        payload = {"my-name": self.control_getProfileName(),
-                   "my-icon": self.control_getProfileIcon(),
-                   # TODO: passing the icon as a data: URL is probably an
-                   # attack vector, change it to just pass the data and have
-                   # the client add the "data:" prefix
-                   "my-pubkey": pk_s,
-                   }
-        forward_payload_data = json.dumps(payload).encode("utf-8")
-        local_payload = {"my-pubkey": pk_s, "my-privkey": sk_s}
-        local_payload_data = json.dumps(local_payload).encode("utf-8")
-        invite = invitation.create_outbound(self.db, petname,
-                                            forward_payload_data,
-                                            local_payload_data)
-        self.subscribe_to_all_pending_invitations()
-        # when this XHR returns, the JS client will fetch the pending
-        # invitation list and show the most recent entry
-        return invite
-
-    def subscribe_to_all_pending_invitations(self):
-        for addr in invitation.addresses_to_subscribe(self.db):
-            self.send_message_to_relay("subscribe", addr)
-        # TODO: when called by startInvitation, it'd be nice to sync here: be
-        # certain that the relay server has received our subscription
-        # request, before returning to startInvitation and allowing the user
-        # to send the invite code. If they stall for some reason, we might
-        # miss the response.
-
-    def control_cancelInvitation(self, invite):
-        print "cancelInvitation", invite
+    def deliver_outbound_messages(self):
+        self.outbound_triggered = False
+        # we are now responsible for transmitting all queued messages. Hm,
+        # not sure this is a good way.
         c = self.db.cursor()
-        c.execute("DELETE FROM `outbound_invitations`"
-                  " WHERE `petname`=? AND `code`=?",
-                  (str(invite["petname"]), str(invite["code"])))
+        now = time.time()
+        not_recent = now - 60; # for now, retry every minute
+        c.execute("SELECT `to_vatid` FROM `outbound_messages`"
+                  " WHERE `last_sent` < ?", (not_recent,))
+        vatids = [res[0] for res in c.fetchall()]
+        for vatid in vatids:
+            self.deliver_outbound_messages_to_vatid(vatid)
+
+    def deliver_outbound_messages_to_vatid(self, vatid):
+        c = self.db.cursor()
+        c.execute("SELECT `msgnum` FROM `outbound_messages`"
+                  " WHERE `to_vatid` = ?", (vatid,))
+        msgnums = [res[0] for res in c.fetchall()]
+        c.execute("SELECT `url` FROM `vat_urls`"
+                  " WHERE `vatid` = ?", (vatid,))
+        urls = [str(res[0]) for res in c.fetchall()]
+        for msgnum in sorted(msgnums):
+            c.execute("SELECT `message_b64` FROM `outbound_messages`"
+                      " WHERE `to_vatid`=? AND `msgnum`=?",
+                      (vatid, msgnum))
+            (msg_b64,) = c.fetchone()
+            msg = base64.b64decode(msg_b64)
+            for url in urls:
+                d = getPage(url, method="POST", postdata=msg,
+                            followRedirect=True, timeout=60)
+                d.addCallback(self._outbound_response, vatid, msgnum)
+                d.addErrback(self._outbound_error)
+
+    def _outbound_response(self, response, their_vatid, msgnum):
+        if their_vatid < self.vatid:
+            offset = 0 # they are First, I am Second, msg is Second->First
+        else:
+            offset = 2 # I am First, they are Second, msg is First->Second
+        expected_nonce = self.number_to_nonce(4*msgnum+offset+1)
+        pubkey_s, pubkey, nonce, encbody = self.parse_message(response)
+        assert pubkey_s == their_vatid, (pubkey_s, their_vatid)
+        assert nonce == expected_nonce, (int(hexlify(nonce),16), 4*msgnum+offset+1)
+        msg = crypto_box_open(encbody, nonce, pubkey, self.privkey)
+        print msg
+        # we don't actually look at the contents, just getting a valid boxed
+        # response back is proof of success. We can now retire it.
+        c = self.db.cursor()
+        c.execute("DELETE FROM `outbound_messages`"
+                  " WHERE `to_vatid`=? AND `msgnum`=?",
+                  (their_vatid, msgnum))
         self.db.commit()
 
-    def control_acceptInvitation(self, petname, code_ascii):
-        print "acceptInvitation", petname, code_ascii
-        pk_s, sk_s = self.create_keypair()
-        payload = {"my-name": self.control_getProfileName(),
-                   "my-icon": self.control_getProfileIcon(), # see above
-                   "my-pubkey": pk_s,
-                   }
-        reverse_payload_data = json.dumps(payload).encode("utf-8")
-        local_payload = {"my-pubkey": pk_s, "my-privkey": sk_s}
-        local_payload_data = json.dumps(local_payload).encode("utf-8")
-        outmsgs = invitation.accept_invitation(self.db,
-                                               petname, code_ascii,
-                                               reverse_payload_data,
-                                               local_payload_data)
-        for outmsg in outmsgs:
-            self.send_message_to_relay(*outmsg)
+    def _outbound_error(self, f):
+        print f
 
-    def control_getOutboundInvitationsJSONable(self):
-        return invitation.pending_outbound_invitations(self.db)
+    def parse_message(self, body):
+        # msg is "v0,pk0-pubkey_b32,nonce_b32,encbody", encbody is binary
+        v0_s, pubkey_s, nonce_s, encbody = body.split(",",3)
+        assert v0_s == "v0"
+        pubkey = util.from_ascii(pubkey_s, "pk0-", encoding="base32")
+        nonce = util.from_ascii(nonce_s, encoding="base32")
+        assert len(pubkey) == crypto_box_PUBLICKEYBYTES
+        assert len(nonce) == crypto_box_NONCEBYTES
+        return (pubkey_s, pubkey, nonce, encbody)
 
-    def control_getAddressBookJSONable(self):
-        c = self.db.cursor()
-        c.execute("SELECT `petname`,`selfname`,`icon_data`,`their_pubkey`"
-                  " FROM `addressbook`"
-                  " ORDER BY `petname` ASC")
-        data = [{ "petname": str(row[0]),
-                  "selfname": str(row[1]),
-                  "icon_data": str(row[2]),
-                  "their_pubkey": str(row[3]),
-                  }
-                for row in c.fetchall()]
-        return data
-    def control_deleteAddressBookEntry(self, petname):
-        c = self.db.cursor()
-        c.execute("DELETE FROM `addressbook` WHERE `petname`=?", (petname,))
-        self.db.commit()
-        self.notify("address-book-changed", None)
-
-    def control_subscribe_events(self, subscriber):
-        self.subscribers[subscriber] = None
-    def control_unsubscribe_events(self, subscriber):
-        self.subscribers.pop(subscriber, None)
-    def notify(self, what, data):
-        print "NOTIFY", what, data
-        for s in self.subscribers:
-            msg = json.dumps({"message": data})
-            s.event(what, msg) # TODO: eventual-send
+    def poke(self, body):
+        if body.startswith("send"):
+            cmd, vatid = body.strip().split()
+            self.send_message(vatid, "hello")
+        self.trigger_inbound()
+        self.trigger_outbound()
+        return "I am poked"

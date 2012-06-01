@@ -17,6 +17,9 @@ def create_node(so, stdout=sys.stdout, stderr=sys.stderr):
     c.execute("INSERT INTO node (webport, pubkey, privkey) VALUES (?,?,?)",
               (so["webport"], pk_s, sk_s))
     db.commit()
+    f = open(os.path.join(basedir, "vatid"), "w")
+    f.write(pk_s+"\n")
+    f.close()
     print >>stdout, "node created in %s" % basedir
     return 0
 

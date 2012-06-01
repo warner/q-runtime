@@ -57,7 +57,8 @@ def start(so, out, err):
     # this is the parent
     print >>out, "child launched .. waiting for startup"
     from . import webwait
-    baseurl = webwait.wait(basedir, err)
+    baseurl, vatid = webwait.wait(basedir, err)
+    print >>out, "child vatid: %s" % vatid
     print >>out, "child ready at %s" % baseurl
 
 def stop(so, out, err):

@@ -7,7 +7,7 @@ class DBError(Exception):
 
 def get_schema(version):
     schema_fn = os.path.join(os.path.dirname(__file__),
-                             "schemas", "v%d.sql" % version)
+                             "db-schemas", "v%d.sql" % version)
     return open(schema_fn, "r").read()
 
 

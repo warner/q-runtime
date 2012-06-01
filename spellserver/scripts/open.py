@@ -12,7 +12,7 @@ def open_control_panel(so, out, err):
         return 1
     sqlite, db = database.get_db(dbfile, err)
     c = db.cursor()
-    baseurl = webwait.wait(basedir, err)
+    baseurl, vatid = webwait.wait(basedir, err)
     print "Node appears to be running, opening browser"
     c.execute("SELECT name FROM services")
     services = set([str(row[0]) for row in c.fetchall()])

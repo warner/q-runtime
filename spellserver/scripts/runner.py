@@ -49,9 +49,19 @@ class StopNodeOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
 class RestartNodeOptions(BasedirParameterMixin, StartArguments, usage.Options):
     def postOptions(self):
         self["no-open"] = False
+
+class GossipOptions(usage.Options):
+    def parseArgs(self, *basedirs):
+        self.basedirs = basedirs
+
 class OpenOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
     optFlags = [
         ("no-open", "n", "Don't open webbrowser, just show URL"),
+        ]
+
+class PokeOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    optParameters = [
+        ("message", "m", "", "Message to send"),
         ]
 
 class TestOptions(usage.Options):
@@ -73,6 +83,9 @@ class Options(usage.Options):
                    ("stop", None, StopNodeOptions, "Stop a node"),
                    ("restart", None, RestartNodeOptions, "Restart a node"),
                    ("open", None, OpenOptions, "Open web control panel"),
+                   ("gossip", None, GossipOptions, "Populate URL tables"),
+
+                   ("poke", None, PokeOptions, "Trigger event loop"),
 
                    ("test", None, TestOptions, "Run unit tests"),
                    ]
@@ -101,10 +114,17 @@ def restart(*args):
     from .startstop import restart
     return restart(*args)
 
+def gossip(*args):
+    from .gossip import gossip
+    return gossip(*args)
+
 def open_control_panel(*args):
     from .open import open_control_panel
     return open_control_panel(*args)
 
+def poke(*args):
+    from .poke import poke
+    return poke(*args)
 
 def test(so, stdout, stderr):
     import unittest
@@ -119,7 +139,9 @@ DISPATCH = {"create-node": create_node,
             "start": start,
             "stop": stop,
             "restart": restart,
+            "gossip": gossip,
             "open": open_control_panel,
+            "poke": poke,
             "test": test,
             }
 

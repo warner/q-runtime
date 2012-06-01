@@ -29,9 +29,9 @@ class Node(service.MultiService):
 
     def init_server(self):
         from . import server
-        pubkey = self.get_node_config("pubkey")
-        privkey = self.get_node_config("privkey")
-        self.server = server.Server(self.db, pubkey, privkey)
+        pubkey_s = self.get_node_config("pubkey")
+        privkey_s = self.get_node_config("privkey")
+        self.server = server.Server(self.db, pubkey_s, privkey_s)
         self.server.setServiceParent(self)
 
     def init_webport(self):

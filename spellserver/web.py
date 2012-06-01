@@ -1,9 +1,8 @@
-import os, json
+import os
 from twisted.application import service, strports
-from twisted.web import server, static, resource, http
+from twisted.web import server, static, resource
 from twisted.python import log
 from .nonce import make_nonce
-from .netstring import split_netstrings
 
 MEDIA_DIRNAME = os.path.join(os.path.dirname(__file__), "media")
 
@@ -17,13 +16,25 @@ def read_media(fn):
 class MessageInput(resource.Resource):
     def __init__(self, server):
         resource.Resource.__init__(self)
-        self.server = server
+        self._server = server
 
     def render_POST(self, request):
-        msg = request.content.read() # (pubkey, nonce, encbody) as netstrings
-        pubkey, nonce, encbody = split_netstrings(msg)
-        resp = self.server.inbound_message(pubkey, nonce, encbody)
+        msg = request.content.read()
+        resp = self._server.inbound_message(msg)
         return resp
+
+class Poke(resource.Resource):
+    def __init__(self, server):
+        resource.Resource.__init__(self)
+        self._server = server
+
+    def render_GET(self, request):
+        return self._server.poke("")
+
+    def render_POST(self, request):
+        body = request.content.read()
+        print "POKE", body
+        return self._server.poke(body)
 
 class Control(resource.Resource):
     def __init__(self, db):
@@ -88,7 +99,8 @@ class WebPort(service.MultiService):
         self.db.cursor().execute("DELETE FROM `webui_access_tokens`")
         self.db.commit()
         mi = MessageInput(node.server)
-        c.putChild("messages", mi)
+        root.putChild("messages", mi)
+        root.putChild("poke", Poke(node.server))
 
         site = server.Site(root)
         webport = str(node.get_node_config("webport"))

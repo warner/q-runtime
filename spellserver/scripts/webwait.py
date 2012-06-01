@@ -13,28 +13,29 @@ def get_url(basedir, err):
     dbfile = os.path.join(basedir, "control.db")
     if not (os.path.isdir(basedir) and os.path.exists(dbfile)):
         print >>err, "'%s' doesn't look like a spellserver basedir, quitting" % basedir
-        return 1
+        return None, None
     sqlite, db = database.get_db(dbfile, err)
     c = db.cursor()
-    c.execute("SELECT webport FROM node LIMIT 1")
-    (webport,) = c.fetchone()
+    c.execute("SELECT webport,pubkey FROM node LIMIT 1")
+    (webport,vatid) = c.fetchone()
     parts = webport.split(":")
     assert parts[0] == "tcp"
     portnum = int(parts[1])
     if portnum == 0:
-        return None
-    return "http://localhost:%d/" % portnum
+        return None, vatid
+    url = "http://localhost:%d/" % portnum
+    return url, vatid
 
 def wait(basedir, err=sys.stderr):
     # returns the baseurl once it's ready
     MAX_TRIES = 1000
     tries = 0
     while tries < MAX_TRIES:
-        baseurl = get_url(basedir, err)
+        baseurl, vatid = get_url(basedir, err)
         try:
             if baseurl:
                 urllib.urlopen(baseurl)
-                return baseurl
+                return baseurl, vatid
         except IOError:
             pass
         time.sleep(0.1)
