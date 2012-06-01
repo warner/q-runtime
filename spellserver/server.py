@@ -1,4 +1,4 @@
-import base64, time
+import os, base64, time, json
 from binascii import hexlify, unhexlify
 from twisted.application import service
 from twisted.web.client import getPage
@@ -235,6 +235,18 @@ class Server(service.MultiService):
         if body.startswith("send"):
             cmd, vatid = body.strip().split()
             self.send_message(vatid, "hello")
+            return "message sent"
+        if body.startswith("make-object"):
+            objid = self.create_object()
+            return "created object %s" % objid
         self.trigger_inbound()
         self.trigger_outbound()
         return "I am poked"
+
+    def create_object(self):
+        objid = util.to_ascii(os.urandom(32), "obj0-", encoding="base32")
+        c = self.db.cursor()
+        c.execute("INSERT INTO `memory` VALUES (?,?)",
+                  (objid, json.dumps({})))
+        self.db.commit()
+        return objid

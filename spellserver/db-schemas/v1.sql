@@ -52,3 +52,9 @@ CREATE TABLE `inbound_messages` -- undelivered messages
  `msgnum` INTEGER,
  `message_b64` STRING -- decrypted
 );
+
+CREATE TABLE `memory`
+(
+ `objid` VARCHAR(256) UNIQUE, -- "obj0-base32.."
+ `data_json` STRING
+);
