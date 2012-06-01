@@ -47,7 +47,19 @@ class Server(service.MultiService):
         # that's their perogative, and resending early to such a vat won't do
         # any good).
 
-    # nonce management: we need to response
+    # nonce management: we need four virtual channels: one pair in each
+    # direction. The Request channels deliver boxed request messages
+    # (len+pubkey+nonce+encbody, where body is target+JSONargs or something).
+    # The Response channels deliver boxed empty (ACK) messages
+    # (len+pubkey+nonce+encbody where body=""). Each server remembers and
+    # retransmits its (encrypted) outbound request with nonce N until it sees
+    # an ACK with a corresponding nonce N. The directions are determined by
+    # comparing base32ified pubkeys: 'First' has the lexicographically lower
+    # pubkey, 'Second' has the higher pubkey. The actual nonces are:
+    #  First->Second: request = 4*N+0, response = 4*N+1
+    #  Second->First: request = 4*N+2, response = 4*N+3
+    # The Request messages are sent in the body of an HTTP request. The
+    # Response messages are returned in the HTTP response.
 
     def inbound_message(self, pubkey, nonce, encbody):
         assert len(pubkey)==nacl.crypto_box_PUBLICKEYBYTES, len(pubkey)
