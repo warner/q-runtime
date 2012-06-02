@@ -4,7 +4,7 @@
 # dependency set. It is only safe to import such things at runtime, inside a
 # command that specifically needs it.
 
-import os, sys, shutil
+import os, sys
 
 try:
     # do not import anything from Twisted that requires the reactor, to allow
@@ -78,14 +78,8 @@ class CreateMethodOptions(BasedirParameterMixin, BasedirArgument, usage.Options)
 class TestOptions(usage.Options):
     def parseArgs(self, *test_args):
         if not test_args:
-            vmaj,vmin = sys.version_info[0:2]
-            if vmaj == 2 and vmin < 7:
-                print "Sorry, test-discovery requires py2.7"
-                print "Try ./ssp test spellserver.test.test_netstrings"
-                sys.exit(1)
-            self.test_args = ["discover", "-v"] # require unittest from py2.7
-        else:
-            self.test_args = ["-v"] + list(test_args)
+            test_args = ["spellserver"]
+        self.test_args = test_args
 
 class Options(usage.Options):
     synopsis = "\nUsage: ssp <command>"
@@ -101,7 +95,7 @@ class Options(usage.Options):
                    ("list-objects", None, ListObjectOptions, "List objects"),
                    ("create-method", None, CreateMethodOptions, "Make method"),
 
-                   ("test", None, TestOptions, "Run unit tests"),
+                   ("test", None, TestOptions, "Run unit tests with trial"),
                    ]
 
     def getUsage(self, **kwargs):
@@ -153,12 +147,9 @@ def create_method(*args):
     return create_method(*args)
 
 def test(so, stdout, stderr):
-    import unittest
-    if os.path.exists("_test"):
-        shutil.rmtree("_test")
-    args = ["python -m unittest"] + list(so.test_args)
-    unittest.main(module=None, argv=args)
-    #unittest.main(module="spellserver.test.test_netstrings", argv=args)
+    from twisted.scripts import trial
+    sys.argv = ["trial"] + list(so.test_args)
+    trial.run()
     sys.exit(0) # just in case
 
 DISPATCH = {"create-node": create_node,
