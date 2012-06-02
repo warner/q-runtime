@@ -10,15 +10,23 @@ def create_memory(db):
     db.commit()
     return memid
 
+class Memory:
+    def __init__(self, db, memid):
+        self.db = db
+        self.memid = memid
 
-def get_data(db, memid):
-    c = db.cursor()
-    c.execute("SELECT `data_json` FROM `memory` WHERE `memid`=?", (memid,))
-    data = c.fetchone()[0]
-    return json.loads(data)
+    def get_data(self):
+        # return a data object, which can be modified in place. Call .save()
+        # afterwards!
+        c = self.db.cursor()
+        c.execute("SELECT `data_json` FROM `memory` WHERE `memid`=?",
+                  (self.memid,))
+        data_json = c.fetchone()[0]
+        self.data = json.loads(data_json)
+        return self.data
 
-def set_data(db, memid, data):
-    c = db.cursor()
-    c.execute("UPDATE `memory` SET `data_json`=? WHERE `memid`=?",
-              (json.dumps(data), memid,))
-    db.commit()
+    def save(self):
+        c = self.db.cursor()
+        c.execute("UPDATE `memory` SET `data_json`=? WHERE `memid`=?",
+                  (json.dumps(self.data), self.memid,))
+        self.db.commit()

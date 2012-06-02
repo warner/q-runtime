@@ -6,7 +6,8 @@ from twisted.web.client import getPage
 from foolscap.api import eventually
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
-from . import util, memory, urbject
+from . import util, urbject
+from .memory import create_memory
 
 
 
@@ -301,7 +302,7 @@ class Server(service.MultiService):
             self.send_message(vatid, json.dumps({"command": "hello"}))
             return "message sent"
         if body.startswith("create-memory"):
-            memid = memory.create_memory(self.db)
+            memid = create_memory(self.db)
             return "created memory %s" % memid
         if body.startswith("execute "):
             cmd, vatid, memid = body.strip().split()

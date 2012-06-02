@@ -4,9 +4,9 @@ from StringIO import StringIO
 from twisted.trial import unittest
 from ..node import Node
 from ..scripts.create_node import create_node
-from .. import memory, urbject
+from ..memory import create_memory, Memory
 
-class Memory(unittest.TestCase):
+class Test(unittest.TestCase):
     def setUp(self):
         self.basedir = self.mktemp()
         create_node({"basedir": self.basedir, "webport": "tcp:0"},
@@ -16,6 +16,15 @@ class Memory(unittest.TestCase):
         self.server = self.node.server
         self.db = self.server.db
 
-    def test_create(self):
-        memid = memory.create_memory(self.db)
+    def test_basic(self):
+        memid = create_memory(self.db)
         self.failUnless(memid.startswith("mem0-"), memid)
+        m = Memory(self.db, memid)
+        data = m.get_data()
+        self.failUnlessEqual(data, {})
+        data["hello"] = "world"
+        data["subdir"] = {"key": 123}
+        m.save()
+        m2 = Memory(self.db, memid)
+        self.failUnlessEqual(m2.get_data(), {"hello": "world",
+                                             "subdir": {"key": 123}})
