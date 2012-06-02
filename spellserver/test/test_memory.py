@@ -5,7 +5,7 @@ from twisted.trial import unittest
 from ..node import Node
 from ..scripts.create_node import create_node
 
-class State(unittest.TestCase):
+class Memory(unittest.TestCase):
     def setUp(self):
         self.basedir = self.mktemp()
         create_node({"basedir": self.basedir, "webport": "tcp:0"},
@@ -15,5 +15,5 @@ class State(unittest.TestCase):
         self.server = self.node.server
 
     def test_create(self):
-        objid = self.server.create_object()
+        memid = self.server.create_memory()
 

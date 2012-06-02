@@ -6,7 +6,7 @@ from twisted.web.client import getPage
 from foolscap.api import eventually
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
-from . import util, objects
+from . import util, memory, objects
 
 
 
@@ -325,9 +325,9 @@ class Server(service.MultiService):
             cmd, vatid = body.strip().split()
             self.send_message(vatid, json.dumps({"command": "hello"}))
             return "message sent"
-        if body.startswith("create-object"):
-            objid = self.create_object()
-            return "created object %s" % objid
+        if body.startswith("create-memory"):
+            memid = self.create_memory()
+            return "created memory %s" % memid
         if body.startswith("execute "):
             cmd, vatid, objid = body.strip().split()
             code = ("def call(args, power):\n"
@@ -344,9 +344,9 @@ class Server(service.MultiService):
         self.trigger_outbound()
         return "I am poked"
 
-    def create_object(self):
-        objid = objects.create_object(self.db)
-        return objid
+    def create_memory(self):
+        memid = memory.create_memory(self.db)
+        return memid
 
 class Power:
     pass
