@@ -1,20 +1,9 @@
 
-import os
-from StringIO import StringIO
 from twisted.trial import unittest
-from ..node import Node
-from ..scripts.create_node import create_node
+from .common import ServerBase
 from ..memory import create_memory, Memory
 
-class Test(unittest.TestCase):
-    def setUp(self):
-        self.basedir = self.mktemp()
-        create_node({"basedir": self.basedir, "webport": "tcp:0"},
-                    stdout=StringIO(), stderr=StringIO())
-        dbfile = os.path.join(self.basedir, "control.db")
-        self.node = Node(self.basedir, dbfile)
-        self.server = self.node.server
-        self.db = self.server.db
+class Test(ServerBase, unittest.TestCase):
 
     def test_basic(self):
         memid = create_memory(self.db)
