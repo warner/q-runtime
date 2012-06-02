@@ -1,12 +1,12 @@
 import base64, time, json
 from binascii import hexlify, unhexlify
-from twisted.python import log
+
 from twisted.application import service
 from twisted.web.client import getPage
 from foolscap.api import eventually
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
-from . import util, memory, objects
+from . import util, memory, urbject
 
 
 
@@ -159,52 +159,6 @@ class Server(service.MultiService):
         if vatids:
             self.trigger_inbound() # more work to do, later
 
-    def execute(self, objid, code, args, from_vatid):
-        print "EVAL <%s>" % (code,)
-        print "ARGS", args
-        code = compile(code, "<from vatid %s>" % from_vatid, "exec")
-        power = Power()
-        power.memory = self.get_data(objid)
-        namespace = {"log": log.msg}
-        eval(code, namespace, namespace)
-        rc = namespace["call"](args, power)
-        del rc # rc is dropped
-        self.set_data(objid, power.memory)
-
-    def process_request(self, msg, from_vatid):
-        # really, you should ignore from_vatid
-        print "PROCESS", msg
-        command = str(msg["command"])
-        if command == "execute":
-            objid = str(msg["objid"])
-            self.execute(objid, msg["code"], msg["args"], from_vatid)
-            return
-        if command == "invoke":
-            methid = str(msg["methid"])
-            c = self.db.cursor()
-            c.execute("SELECT `objid`,`code` FROM `methods` WHERE `methid`=?",
-                      (methid,))
-            res = c.fetchall()
-            if not res:
-                raise KeyError("unknown objid %s" % objid)
-            objid, code = res[0]
-            self.execute(objid, code, msg["args"], from_vatid)
-            return
-        pass
-
-    def get_data(self, objid):
-        c = self.db.cursor()
-        c.execute("SELECT `data_json` FROM `memory` WHERE `objid`=?",
-                  (objid,))
-        data = c.fetchone()[0]
-        return json.loads(data)
-
-    def set_data(self, objid, data):
-        c = self.db.cursor()
-        c.execute("UPDATE `memory` SET `data_json`=? WHERE `objid`=?",
-                  (json.dumps(data), objid,))
-        self.db.commit()
-
     def send_message(self, their_vatid, msg):
         c = self.db.cursor()
         c.execute("SELECT `next_msgnum` FROM `outbound_msgnums`"
@@ -307,16 +261,37 @@ class Server(service.MultiService):
         assert len(nonce) == crypto_box_NONCEBYTES
         return (pubkey_s, pubkey, nonce, encbody)
 
-    def send_execute(self, vatid, objid, code, args):
+
+    # main request-execution handler
+
+    def process_request(self, msg, from_vatid):
+        # really, you should ignore from_vatid
+        print "PROCESS", msg
+        command = str(msg["command"])
+        if command == "execute":
+            memid = str(msg["memid"])
+            urbject.execute(msg["code"], msg["args"], memid, from_vatid)
+            return
+        if command == "invoke":
+            urbjid = str(msg["urbjid"])
+            u = urbject.Urbject(self.db, urbjid)
+            u.invoke(msg["args"], from_vatid)
+            return
+        pass
+
+
+    # debug / CLI tools, triggered by 'poke'
+
+    def send_execute(self, vatid, memid, code, args):
         msg = {"command": "execute",
-               "objid": objid,
+               "memid": memid,
                "code": code,
                "args": json.dumps(args)}
         self.send_message(vatid, json.dumps(msg))
 
-    def send_invoke(self, vatid, methid, args):
+    def send_invoke(self, vatid, urbjid, args):
         msg = {"command": "invoke",
-               "methid": methid,
+               "urbjid": urbjid,
                "args": args}
         self.send_message(vatid, json.dumps(msg))
 
@@ -326,27 +301,20 @@ class Server(service.MultiService):
             self.send_message(vatid, json.dumps({"command": "hello"}))
             return "message sent"
         if body.startswith("create-memory"):
-            memid = self.create_memory()
+            memid = memory.create_memory(self.db)
             return "created memory %s" % memid
         if body.startswith("execute "):
-            cmd, vatid, objid = body.strip().split()
+            cmd, vatid, memid = body.strip().split()
             code = ("def call(args, power):\n"
                     "    log('I have power!')\n")
             args = {"a": 12}
-            self.send_execute(vatid, objid, code, args)
+            self.send_execute(vatid, memid, code, args)
             return "execute sent"
         if body.startswith("invoke "):
-            cmd, vatid, methid = body.strip().split()
+            cmd, vatid, urbjid = body.strip().split()
             args = {"a": 12}
-            self.send_invoke(vatid, methid, args)
+            self.send_invoke(vatid, urbjid, args)
             return "invoke sent"
         self.trigger_inbound()
         self.trigger_outbound()
         return "I am poked"
-
-    def create_memory(self):
-        memid = memory.create_memory(self.db)
-        return memid
-
-class Power:
-    pass
