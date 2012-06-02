@@ -59,9 +59,16 @@ CREATE TABLE `memory`
  `data_json` STRING
 );
 
+CREATE TABLE `power`
+(
+ `powid` VARCHAR(256) UNIQUE, -- "pow0-base32.."
+ `power_json` STRING,
+ `power_clist_json` STRING
+);
+
 CREATE TABLE `urbjects`
 (
  `urbjid` VARCHAR(256) UNIQUE, -- "urb0-base32.."
  `code` STRING,
- `memid` VARCHAR(256) -- "mem0-base32.."
+ `powid` VARCHAR(256) -- "pow0-base32.."
 );
