@@ -271,7 +271,7 @@ class Server(service.MultiService):
         command = str(msg["command"])
         if command == "execute":
             memid = str(msg["memid"])
-            urbject.execute(msg["code"], msg["args"], memid, from_vatid)
+            urbject.execute(self.db, msg["code"], msg["args"], memid, from_vatid)
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])

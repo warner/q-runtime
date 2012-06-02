@@ -2,11 +2,11 @@
 import os, json
 from . import util
 
-def create_memory(db):
+def create_memory(db, contents={}):
     memid = util.to_ascii(os.urandom(32), "mem0-", encoding="base32")
     c = db.cursor()
     c.execute("INSERT INTO `memory` VALUES (?,?)",
-              (memid, json.dumps({})))
+              (memid, json.dumps(contents)))
     db.commit()
     return memid
 
