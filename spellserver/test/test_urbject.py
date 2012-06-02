@@ -14,6 +14,17 @@ def call(args, power):
     power.memory['counter'] += args['delta']
 """
 
+F3 = """
+F3a = '''
+def call(args, power):
+    power.memory['counter'] += 10
+'''
+
+def call(args, power):
+    u2id = power.make_urbject(F3a, power)
+    power.memory['u2id'] = u2id
+"""
+
 class Test(ServerBase, unittest.TestCase):
 
     def test_basic(self):
@@ -40,3 +51,15 @@ class Test(ServerBase, unittest.TestCase):
         u.invoke({"delta": 2}, "from_vatid")
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_data()["counter"], 2)
+
+    def test_sub_urbject(self):
+        memid = create_memory(self.db, {"counter": 0})
+        urbjid = create_urbject(self.db, memid, F3)
+        u1 = Urbject(self.db, urbjid)
+        u1.invoke({}, "from_vatid")
+        m = Memory(self.db, memid)
+        u2id = m.get_data()["u2id"]
+        u2 = Urbject(self.db, u2id)
+        u2.invoke({}, "from_vatid")
+        self.failUnlessEqual(m.get_data()["counter"], 10)
+

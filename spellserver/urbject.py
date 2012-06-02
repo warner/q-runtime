@@ -25,6 +25,10 @@ def execute(db, code, args, memid, from_vatid, debug=None):
     power = Power()
     memory = Memory(db, memid)
     power.memory = memory.get_data()
+    def make_urbject(code, power):
+        urbjid = create_urbject(db, memid, code)
+        return urbjid
+    power.make_urbject = make_urbject
     namespace = {"log": log.msg}
     if debug:
         namespace["debug"] = debug
