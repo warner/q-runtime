@@ -118,6 +118,7 @@ class WebPort(service.MultiService):
             def _ready(port):
                 try:
                     got_port = port.getHost().port
+                    self.node._debug_webport = got_port
                     pieces[1] = str(got_port)
                     new_webport = ":".join(pieces)
                     self.node.set_node_config("webport", new_webport)

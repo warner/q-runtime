@@ -3,6 +3,7 @@ from binascii import hexlify, unhexlify
 
 from twisted.application import service
 from twisted.web.client import getPage
+from twisted.python import log
 from foolscap.api import eventually
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
@@ -47,6 +48,8 @@ class Server(service.MultiService):
 
         self.inbound_triggered = False
         self.outbound_triggered = False
+
+        self._debug_processed_counter = 0
 
     # nonce management: we need four virtual channels: one pair in each
     # direction. The Request channels deliver boxed request messages
@@ -103,12 +106,12 @@ class Server(service.MultiService):
         # we've been rolled back, or they're sending nonces from the future.
         # If the nonce is just right, process the message.
         if nonce_number > expected_nonce:
-            print "future: got %d, expected %d" % (nonce_number, expected_nonce)
+            log.msg("future: got %d, expected %d" % (nonce_number, expected_nonce))
             raise ValueError("begone ye futuristic demon message!")
         if nonce_number < expected_nonce:
-            print "old: got %d, current is %d" % (nonce_number, expected_nonce)
+            log.msg("old: got %d, current is %d" % (nonce_number, expected_nonce))
             return "ack (old)"
-        print "current: %d" % nonce_number
+        log.msg("current: %d" % nonce_number)
         # add the message to the inbound queue. Once safe, ack.
         msg_json = msg.decode("utf-8")
         c.execute("INSERT INTO `inbound_messages` VALUES (?,?,?)",
@@ -146,7 +149,13 @@ class Server(service.MultiService):
         (msg_json,) = c.fetchone()
         msg = json.loads(msg_json)
 
+        # TODO: catch errors in process_request(), specifically inside the
+        # eval() and call() that it performs. Those failures (which are
+        # repeatable) still allow us to retire the message. It's only system
+        # failures (loss of power, node shutdown) that allow messages to be
+        # tried again.
         self.process_request(msg, vatid)
+        self._debug_processed_counter += 1
 
         # if that completes, we can retire the message
         c.execute("DELETE FROM `inbound_messages`"
@@ -161,6 +170,8 @@ class Server(service.MultiService):
             self.trigger_inbound() # more work to do, later
 
     def send_message(self, their_vatid, msg):
+        assert isinstance(msg, (str, unicode)), "should be a json object, not %s" % type(msg)
+        assert msg.startswith("{")
         c = self.db.cursor()
         c.execute("SELECT `next_msgnum` FROM `outbound_msgnums`"
                   " WHERE `to_vatid`=? LIMIT 1", (their_vatid,))
@@ -218,6 +229,8 @@ class Server(service.MultiService):
         c.execute("SELECT `url` FROM `vat_urls`"
                   " WHERE `vatid` = ?", (vatid,))
         urls = [str(res[0]) for res in c.fetchall()]
+        if not urls:
+            log.msg("warning: sending msg to vatid %s but have no URL" % vatid)
         for msgnum in sorted(msgnums):
             c.execute("SELECT `message_b64` FROM `outbound_messages`"
                       " WHERE `to_vatid`=? AND `msgnum`=?",
@@ -240,7 +253,7 @@ class Server(service.MultiService):
         assert pubkey_s == their_vatid, (pubkey_s, their_vatid)
         assert nonce == expected_nonce, (int(hexlify(nonce),16), 4*msgnum+offset+1)
         msg = crypto_box_open(encbody, nonce, pubkey, self.privkey)
-        print msg
+        log.msg("response msg: %s" % msg)
         # we don't actually look at the contents, just getting a valid boxed
         # response back is proof of success. We can now retire it.
         c = self.db.cursor()
@@ -267,16 +280,18 @@ class Server(service.MultiService):
 
     def process_request(self, msg, from_vatid):
         # really, you should ignore from_vatid
-        print "PROCESS", msg
+        log.msg("PROCESS %s" % (msg,))
         command = str(msg["command"])
         if command == "execute":
             memid = str(msg["memid"])
-            urbject.execute(self.db, msg["code"], msg["args"], memid, from_vatid)
+            powid = urbject.create_power_for_memid(self.db, memid)
+            i = urbject.Invocation(self.db, msg["code"], powid)
+            i.invoke(msg["args_json"], "{}", from_vatid)
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])
             u = urbject.Urbject(self.db, urbjid)
-            u.invoke(msg["args"], from_vatid)
+            u.invoke(msg["args_json"], msg["args_clist_json"], from_vatid)
             return
         pass
 

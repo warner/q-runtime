@@ -1,3 +1,4 @@
+from twisted.python import log
 from twisted.application import service
 from . import database, web
 
@@ -13,7 +14,7 @@ class Node(service.MultiService):
         self.init_webport()
 
     def startService(self):
-        print "NODE STARTED"
+        log.msg("NODE STARTED")
         service.MultiService.startService(self)
 
     def get_node_config(self, name):
