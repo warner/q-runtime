@@ -4,10 +4,13 @@ from . import util
 
 def create_memory(db, contents={}, clist={}):
     # if clist={}, this is powerless
+    return create_raw_memory(db, json.dumps(contents), json.dumps(clist))
+
+def create_raw_memory(db, contents_json, clist_json):
     memid = util.to_ascii(os.urandom(32), "mem0-", encoding="base32")
     c = db.cursor()
     c.execute("INSERT INTO `memory` VALUES (?,?,?)",
-              (memid, json.dumps(contents), json.dumps(clist)))
+              (memid, contents_json, clist_json))
     db.commit()
     return memid
 
@@ -20,7 +23,7 @@ class Memory:
         c = self.db.cursor()
         c.execute("SELECT `data_json`,`data_clist_json` FROM `memory`"
                   " WHERE `memid`=?", (self.memid,))
-        return c.fetchone()[0]
+        return c.fetchone()
 
     def save(self, packed):
         c = self.db.cursor()
@@ -29,3 +32,16 @@ class Memory:
                   (packed.power_json, packed.power_clist_json,
                    self.memid))
         self.db.commit()
+
+    def get_static_data(self):
+        c = self.db.cursor()
+        c.execute("SELECT `data_json` FROM `memory`"
+                  " WHERE `memid`=?", (self.memid,))
+        return json.loads(c.fetchone()[0])
+
+    def get_data(self):
+        c = self.db.cursor()
+        c.execute("SELECT `data_json`,`data_clist_json` FROM `memory`"
+                  " WHERE `memid`=?", (self.memid,))
+        data_json, data_clist_json = c.fetchone()
+        return json.loads(data_json), json.loads(data_clist_json)

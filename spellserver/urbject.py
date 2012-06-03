@@ -2,7 +2,7 @@
 import os, json, copy
 from twisted.python import log
 from . import util
-from .memory import Memory
+from .memory import Memory, create_raw_memory
 
 def create_urbject(db, powid, code):
     urbjid = util.to_ascii(os.urandom(32), "urb0-", encoding="base32")
@@ -79,33 +79,36 @@ class OuterPower:
     to the real powers."""
     def __init__(self):
         # .memory remembers the Memory object that was in power.memory . Can
-        # be None if this child was not given any memory.
+        # be None if this child was not given any memory. .memory_data is the
+        # actual dictionary, used for object comparison in make_urbject() to
+        # tell if the power.memory being handed to the child is the same as
+        # our own (and thus should be shared)
         self.memory = None
+        self.memory_data = None
         # .clist maps clids from .inner_power objects to real swissnums
-        self.clist = clist
         self.clist = CList()
 
     def set_inner_power(self, inner_power):
         # inner_power is the dictionary passed to sandboxed code as power=
         self.inner_power = inner_power
 
-    def set_memory(self, memory):
+    def set_memory(self, memory, memory_data):
         assert not self.memory, "only one Memory per Power"
         self.memory = memory
+        self.memory_data = memory_data
 
 class Invocation:
-    def __init__(self, db, urb):
+    def __init__(self, db, code, powid):
         self.db = db
-        self.urb = urb
+        self.code = code
 
-        self.code, powid = urb.get_code_and_powid()
         self.outer_power = OuterPower()
         up = Unpacking(self.db, self.outer_power)
         inner_power = up.unpack_power(*get_power(self.db, powid))
         self.outer_power.set_inner_power(inner_power)
 
     def invoke_static(self, static_args, from_vatid, debug=None):
-        return self.execute(static_args, from_vatid, debug=None)
+        return self.execute(static_args, from_vatid, debug)
 
     def invoke(self, packed_args, from_vatid, debug=None):
         up = Unpacking(self.db, self.outer_power)
@@ -113,9 +116,9 @@ class Invocation:
                                     packed_args.power_clist_json)
         return self.execute(inner_args, from_vatid, debug)
 
-    def execute(self, db, args, from_vatid, debug=None):
-        log.msg("EVAL <%s>" % (self.code,))
-        log.msg("ARGS <%s>" % (args,))
+    def execute(self, args, from_vatid, debug=None):
+        #print "EVAL <%s>" % (self.code,)
+        #print " ARGS <%s>" % (args,)
         code = compile(self.code, "<from vatid %s>" % from_vatid, "exec")
         inner_power = self.outer_power.inner_power
         # save contents even if they trash 'power.memory'
@@ -136,7 +139,6 @@ class Invocation:
             p = Packing(self.db, self.outer_power)
             memory.save(p.pack_memory(memory_contents))
 
-        
 
 class PackedPower:
     def __init__(self, power_json, power_clist_json):
@@ -194,14 +196,15 @@ class Packing:
         return self._pack(inner_memory, True, False)
 
     def _build_fake_memory(self, old_memory):
-        if old_memory is self.outer_power.memory:
+        if old_memory is self.outer_power.memory_data:
             # the child will share the parent's Memory
             new_clid = self.clist.add(self.outer_power.memory.memid)
             return {"__power__": "memory", "clid": new_clid}
 
         # the child gets a new Memory with some initial contents
         packed = self._pack_memory(old_memory)
-        memid = memory.create_memory(self.db, packed.contents, packed.clist)
+        memid = create_raw_memory(self.db, packed.power_json,
+                                  packed.power_clist_json)
         new_clid = self.clist.add(memid)
         return  {"__power__": "memory", "clid": new_clid}
 
@@ -224,7 +227,7 @@ class Packing:
         enc._power_old_clist = self.outer_power.clist
         enc._power_new_clist = self.clist
         new_power_json = enc.encode(child_power)
-        packed = PackedPower(new_power_json, json.dumps(new_clist))
+        packed = PackedPower(new_power_json, json.dumps(self.clist))
         return packed
 
 class Unpacking:
@@ -286,16 +289,16 @@ class Unpacking:
                     memid = old_clist[old_clid]
                     # memid doesn't live in the new clist, just in
                     # OuterPower.memory.memid
-                    memory = Memory(db, memid)
-                    self.outer_power.set_memory(memory) # set-once
+                    memory = Memory(self.db, memid)
                     # now extract the contents
                     memory_json, memory_clist_json = memory.get_raw_data()
                     # unpack_memory() can add items to our clist: the
                     # invocation gets power from Memory as well as args
                     data = self._unpack_memory(memory_json, memory_clist_json)
+                    self.outer_power.set_memory(memory, data) # set-once
                     return data
                 if ptype == "reference":
-                    refid = old_clist[clid]
+                    refid = old_clist[old_clid]
                     r = InnerReference(self.outer_power.clist.add(refid))
                     return r
                 raise ValueError("unknown power type %s" % (ptype,))
@@ -333,17 +336,18 @@ class Urbject:
         self.urbjid = urbjid
 
     def invoke_static(self, args, from_vatid, debug=None):
-        i = Invocation(self.db, self)
+        code, powid = self.get_code_and_powid()
+        i = Invocation(self.db, code, powid)
         # args= are static for now: nothing magic
         return i.invoke_static(args, from_vatid, debug)
 
     def invoke(self, packed_args, from_vatid, debug=None):
-        i = Invocation(self.db, self)
+        code, powid = self.get_code_and_powid()
+        i = Invocation(self.db, code, powid)
         return i.invoke(packed_args, from_vatid, debug)
 
     def get_code_and_powid(self):
         c = self.db.cursor()
-        print "URBJID", self.urbjid
         c.execute("SELECT `code`,`powid` FROM `urbjects` WHERE `urbjid`=?",
                   (self.urbjid,))
         res = c.fetchall()
