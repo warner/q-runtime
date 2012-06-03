@@ -26,6 +26,11 @@ def call(args, power):
     power['memory']['u2id'] = u2id
 """
 
+F4 = """
+def call(args, power):
+    debug('make_urbject' in power)
+"""
+
 class Test(ServerBase, unittest.TestCase):
 
     def test_basic(self):
@@ -59,15 +64,20 @@ class Test(ServerBase, unittest.TestCase):
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_data()["counter"], 2)
 
+    def test_deny_make_urbject(self):
+        memid = create_memory(self.db, {"counter": 0})
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=False)
+        urbjid = create_urbject(self.db, powid, F4)
+        msgs = []
+        Urbject(self.db, urbjid).invoke({}, "from_vatid", debug=msgs.append)
+        self.failUnlessEqual(msgs, [False])
+
     def test_sub_urbject(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F3)
-        u1 = Urbject(self.db, urbjid)
-        u1.invoke({}, "from_vatid")
+        Urbject(self.db, urbjid).invoke({}, "from_vatid")
         m = Memory(self.db, memid)
         u2id = m.get_data()["u2id"]
-        u2 = Urbject(self.db, u2id)
-        u2.invoke({}, "from_vatid")
+        Urbject(self.db, u2id).invoke({}, "from_vatid")
         self.failUnlessEqual(m.get_data()["counter"], 10)
-

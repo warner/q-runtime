@@ -204,10 +204,10 @@ class Urbject:
         self.db = db
         self.urbjid = urbjid
 
-    def invoke(self, args, from_vatid):
+    def invoke(self, args, from_vatid, debug=None):
         code, powid = self.get_code_and_powid()
         outer_power = get_power(self.db, powid)
-        return execute(self.db, code, args, outer_power, from_vatid)
+        return execute(self.db, code, args, outer_power, from_vatid, debug)
 
     def get_code_and_powid(self):
         c = self.db.cursor()
