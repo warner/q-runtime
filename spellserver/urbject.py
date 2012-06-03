@@ -73,91 +73,50 @@ class NativePower:
     def __call__(self, *args, **kwargs):
         return self.f(*args, **kwargs)
 
-class OuterPower:
-    """This is held outside the sandbox, and maps inside-sandbox placeholders
-    to the real powers."""
-    def fill(self, inner_power, clist, memory):
-        # inner_power is the dictionary passed to sandboxed code as power=
-        self.inner_power = inner_power
-        # .clist maps clids from .inner_power objects to real swissnums
-        self.clist = clist
-        # .memory remembers the Memory object that was in power.memory . Can
-        # be None if this child was not given any memory.
-        self.memory = memory
 
-def unpack_power(db, power_json, clist_json):
-    return unpack(db, power_json, clist_json, True, True, None)
-def unpack_memory(db, power_json, clist_json, new_clist):
-    return unpack(db, power_json, clist_json, True, False, new_clist)
-def unpack_args(db, power_json, clist_json, new_clist):
-    return unpack(db, power_json, clist_json, False, False, new_clist)
+class Invocation:
+    def __init__(self, db, urb):
+        self.db = db
+        self.urb = urb
 
-def unpack(db, power_json, clist_json, allow_native, allow_memory, new_clist):
-    # create the inner power object, and the clist, and the memorylist
-    outer_power = OuterPower()
-    def inner_make_urbject(code, child_power):
-        packed_power = pack_power(child_power, outer_power)
-        powid = create_power(db, packed_power)
-        urbjid = create_urbject(db, powid, code)
-        clid = outer_power.clist.add(urbjid)
-        return InnerReference(clid)
-    if new_clist is None:
-        # unpack_memory() needs to provide its own new_clist so the newly
-        # unpacked objects can be allocated clids properly. Likewise
-        # unpack_args() provides the clist from the unpack_power() call that
-        # just preceded it.
-        new_clist = CList() # maps clids to swissnums
-    old_clist = json.loads(clist_json)
-    memory = None
+        self.code, powid = urb.get_code_and_powid()
+        self.clist = CList()
+        up = Unpacking(self.db, self.clist)
+        self.outer_power = up.unpack_power(*get_power(self.db, powid))
 
-    def hook(dct):
-        if "__power__" in dct:
-            ptype = dct["__power__"]
-            old_clid = str(dct["clid"]) # points into old_clist
-            # str because 'clist' keys (like all JSON keys) are strings
-            if ptype == "native" and allow_native:
-                name = old_clist[old_clid]
-                if name == "make_urbject":
-                    return NativePower(inner_make_urbject, new_clist.add(name))
-                raise ValueError("unknown native power %s" % (name,))
-            if ptype == "memory" and allow_memory:
-                assert not memory, "only one Memory per Power"
-                memid = old_clist[old_clid]
-                # memid doesn't live in new_clist, just in OuterPower.memory
-                memory = Memory(db, memid)
-                memory_json, memory_clist_json = memory.get_raw_data()
-                # unpack_memory() also adds itens to new_clist
-                data = unpack_memory(db, memory_json, memory_clist_json,
-                                     new_clist).inner_power
-                return data
-            if ptype == "reference":
-                r = InnerReference(new_clist.add(old_clist[clid]))
-                return r
-            raise ValueError("unknown power type %s" % (ptype,))
-        return dct
-    try:
-        inner_power = json.loads(power_json, object_hook=hook)
-    except:
-        print "unpack_power exception, power_json='%s'" % power_json
-        raise
-    outer_power.fill(inner_power, new_clist, memory)
-    return outer_power
+    def invoke_static(self, static_args, from_vatid, debug=None):
+        return self.execute(static_args, from_vatid, debug=None)
 
-def get_power(db, powid):
-    c = db.cursor()
-    c.execute("SELECT `power_json`,`power_clist_json` FROM `power`"
-              " WHERE `powid`=?", (powid,))
-    results = c.fetchall()
-    assert results, "no powid %s" % powid
-    (power_json, power_clist_json) = results[0]
-    return unpack_power(db, power_json, power_clist_json)
+    def invoke(self, packed_args, from_vatid, debug=None):
+        up = Unpacking(self.db, self.clist)
+        inner_args = up.unpack_args(packed_args.power_json,
+                                    packed_args.power_clist_json)
+        return self.execute(inner_args, from_vatid, debug)
 
+    def execute(self, db, args, from_vatid, debug=None):
+        log.msg("EVAL <%s>" % (self.code,))
+        log.msg("ARGS <%s>" % (args,))
+        code = compile(self.code, "<from vatid %s>" % from_vatid, "exec")
+        inner_power = self.outer_power.inner_power
+        # save contents even if they trash 'power.memory'
+        memory = self.outer_power.memory
+        memory_contents = inner_power.get("memory")
+        def log2(msg):
+            log.msg(msg)
+            print msg
+        namespace = {"log": log2, "add": add}
+        if debug:
+            namespace["debug"] = debug
 
-def add(a, b):
-    c = copy.deepcopy(a)
-    for key in b:
-        c[key] = b[key]
-    return c
+        eval(code, namespace, namespace)
+        rc = namespace["call"](args, inner_power)
+        del rc # rc is dropped for now
+
+        if memory:
+            p = Packing(self.db, self.outer_power)
+            memory.save(p.pack_memory(memory_contents))
+
+        
 
 class PackedPower:
     def __init__(self, power_json, power_clist_json):
@@ -181,71 +140,189 @@ class PowerEncoder(json.JSONEncoder):
             return {"__power__": "reference", "clid": new_clid}
         return json.JSONEncoder.default(self, obj)
 
-def pack_power(db, child_power, outer_power):
-    # used for make_object(code, power). Can serialize static, References,
-    # NativePowers, and one memory.
-    return pack(db, child_power, outer_power, True, True)
-def pack_memory(db, inner_memory, outer_power):
-    # Can serialize static, References, NativePowers, but not Memory.
-    return pack(db, inner_memory, outer_power, True, False)
-def pack_args(db, child_args, outer_power):
-    # Can serialize static and References, but not NativePowers or Memory
-    return pack(db, child_args, outer_power, False, False)
+class Packing:
+    def __init__(self, db, outer_power):
+        self.db = db
+        self.outer_power = outer_power
+        self.clist = CList()
+        self._used = False
 
-def pack(db, child_power, outer_power, allow_native, allow_memory):
-    if allow_memory:
-        # we handle a top-level Memory object by pretending that the original
-        # data contains a {__power__:memory} dict. We must modify a copy, not
-        # the original.
-        child_power, old_child_power = {}, child_power
-        child_clist = CList(outer_power.clist) # copy
-        for k in old_child_power: # shallow copy
-            if k != "memory":
-                child_power[k] = old_child_power[k]
-        if old_child_power.get("memory") is not None:
-            if old_child_power["memory"] is outer_power.memory:
-                # the child will share the parent's Memory
-                new_clid = child_clist.add(outer_power.memory.memid)
-                child_power["memory"] = {"__power__": "memory",
-                                         "clid": new_clid}
-            else:
-                # the child gets a new Memory with some initial contents
-                initial_contents = old_child_power["memory"]
-                packed = pack_memory(db, initial_contents, outer_power)
-                memid = memory.create_memory(db, packed.contents, packed.clist)
-                new_clid = child_clist.add(memid)
-                child_power["memory"] = {"__power__": "memory",
-                                         "clid": new_clid}
-    else:
-        child_clist = outer_power.clist
+    # choose exactly one of these three entry points
+    def pack_power(self, child_power):
+        # used for make_object(code, power). Can serialize static, References,
+        # NativePowers, and one memory.
+        assert not self._used
+        self._used = True
+        return self._pack(child_power, True, True)
 
-    enc = PowerEncoder()
-    enc._power_allow_native = allow_native
-    enc._power_old_clist = child_clist
-    enc._power_new_clist = new_clist = CList()
-    new_power_json = enc.encode(child_power)
-    packed = PackedPower(new_power_json, json.dumps(new_clist))
-    return packed
+    def pack_memory(self, inner_memory):
+        # Can serialize static, References, NativePowers, but not Memory.
+        assert not self._used
+        self._used = True
+        return self._pack(inner_memory, True, False)
+
+    def pack_args(self, child_args):
+        # Can serialize static and References, but not NativePowers or Memory
+        assert not self._used
+        self._used = True
+        return self._pack(child_args, False, False)
+
+    def _pack_memory(self, inner_memory):
+        # This lets pack_power() one-time-recursively pack power.memory and
+        # have both _power and _memory add to the same clist
+        assert self._used
+        return self._pack(inner_memory, True, False)
+
+    def _build_fake_memory(self, old_memory):
+        if old_memory is self.outer_power.memory:
+            # the child will share the parent's Memory
+            new_clid = self.clist.add(self.outer_power.memory.memid)
+            return {"__power__": "memory", "clid": new_clid}
+
+        # the child gets a new Memory with some initial contents
+        packed = self._pack_memory(old_memory)
+        memid = memory.create_memory(self.db, packed.contents, packed.clist)
+        new_clid = self.clist.add(memid)
+        return  {"__power__": "memory", "clid": new_clid}
+
+    def _pack(self, child_power, allow_native, allow_memory):
+        if allow_memory:
+            # we handle a top-level Memory object by pretending that the
+            # original data contains a {__power__:memory} dict. We must
+            # modify a copy, not the original.
+            child_power, old_child_power = {}, child_power
+            for k in old_child_power: # shallow copy
+                if k == "memory":
+                    old_memory = old_child_power[k]
+                    if old_memory is not None:
+                        child_power[k] = self._build_fake_memory(old_memory)
+                else:
+                    child_power[k] = old_child_power[k]
+
+        enc = PowerEncoder()
+        enc._power_allow_native = allow_native
+        enc._power_old_clist = self.outer_power.clist
+        enc._power_new_clist = self.clist
+        new_power_json = enc.encode(child_power)
+        packed = PackedPower(new_power_json, json.dumps(new_clist))
+        return packed
+
+class OuterPower:
+    """This is held outside the sandbox, and maps inside-sandbox placeholders
+    to the real powers."""
+    memory = None
+
+    def fill(self, inner_power, clist):
+        # inner_power is the dictionary passed to sandboxed code as power=
+        self.inner_power = inner_power
+        # .clist maps clids from .inner_power objects to real swissnums
+        self.clist = clist
+
+    def set_memory(self, memory):
+        # .memory remembers the Memory object that was in power.memory . Can
+        # be None if this child was not given any memory.
+        assert not self.memory, "only one Memory per Power"
+        self.memory = memory
+
+class Unpacking:
+    def __init__(self, db, clist):
+        self.db = db
+        self.clist = clist # maps clids to swissnums
+        self.outer_power = OuterPower()
+        self._used = False
+
+    # choose exactly one of these three entry points
+    def unpack_power(self, power_json, clist_json):
+        self._call_once()
+        inner_power = self._unpack(power_json, clist_json, True, True)
+        return self._return_outer_power(inner_power)
+
+    def unpack_memory(self, power_json, clist_json):
+        self._call_once()
+        inner_power = self._unpack(power_json, clist_json, True, False)
+        return self._return_outer_power(inner_power)
+
+    def unpack_args(self, power_json, clist_json):
+        self._call_once()
+        inner_power = self._unpack(power_json, clist_json, False, False)
+        return self._return_outer_power(inner_power)
+
+    def _call_once(self):
+        assert not self._used
+        self._used = True
+
+    def _return_outer_power(self, inner_power):
+        self.outer_power.fill(inner_power, self.clist)
+        return self.outer_power
+
+    def _unpack_memory(self, power_json, clist_json):
+        assert self._used
+        return self._unpack(power_json, clist_json, True, False)
+
+    def _unpack(self, power_json, clist_json, allow_native, allow_memory):
+        # create the inner power object, and the clist, and the memorylist
+        def inner_make_urbject(code, child_power):
+            packed_power = pack_power(child_power, self.outer_power)
+            powid = create_power(db, packed_power)
+            urbjid = create_urbject(db, powid, code)
+            # this will update Invocation.clist, adding new powers (for the
+            # newly created object)
+            clid = self.outer_power.clist.add(urbjid)
+            return InnerReference(clid)
+
+        old_clist = json.loads(clist_json)
+        def hook(dct):
+            if "__power__" in dct:
+                ptype = dct["__power__"]
+                old_clid = str(dct["clid"]) # points into old_clist
+                # str because 'clist' keys (like all JSON keys) are strings
+                if ptype == "native" and allow_native:
+                    name = old_clist[old_clid]
+                    if name == "make_urbject":
+                        return NativePower(inner_make_urbject,
+                                           self.clist.add(name))
+                    raise ValueError("unknown native power %s" % (name,))
+                if ptype == "memory" and allow_memory:
+                    memid = old_clist[old_clid]
+                    # memid doesn't live in the new clist, just in
+                    # OuterPower.memory.memid
+                    memory = Memory(db, memid)
+                    self.outer_power.set_memory(memory) # set-once
+                    # now extract the contents
+                    memory_json, memory_clist_json = memory.get_raw_data()
+                    # unpack_memory() can add items to our clist: the
+                    # invocation gets power from Memory as well as args
+                    data = self._unpack_memory(memory_json, memory_clist_json)
+                    return data
+                if ptype == "reference":
+                    r = InnerReference(self.clist.add(old_clist[clid]))
+                    return r
+                raise ValueError("unknown power type %s" % (ptype,))
+            return dct
+        try:
+            inner_power = json.loads(power_json, object_hook=hook)
+        except:
+            print "unpack_power exception, power_json='%s'" % power_json
+            raise
+        return inner_power
 
 
-def execute(db, code, args, outer_power, from_vatid, debug=None):
-    log.msg("EVAL <%s>" % (code,))
-    log.msg("ARGS <%s>" % (args,))
-    code = compile(code, "<from vatid %s>" % from_vatid, "exec")
-    memory = outer_power.memory # save contents even if they trash 'power'
-    def log2(msg):
-        log.msg(msg)
-        print msg
-    namespace = {"log": log2, "add": add}
-    if debug:
-        namespace["debug"] = debug
+def get_power(db, powid):
+    c = db.cursor()
+    c.execute("SELECT `power_json`,`power_clist_json` FROM `power`"
+              " WHERE `powid`=?", (powid,))
+    results = c.fetchall()
+    assert results, "no powid %s" % powid
+    (power_json, power_clist_json) = results[0]
+    return (power_json, power_clist_json)
 
-    eval(code, namespace, namespace)
-    rc = namespace["call"](args, outer_power.inner_power)
-    del rc # rc is dropped for now
 
-    if memory:
-        memory.save(pack_memory(db, memory.data, outer_power))
+def add(a, b):
+    c = copy.deepcopy(a)
+    for key in b:
+        c[key] = b[key]
+    return c
+
 
 
 
@@ -254,21 +331,14 @@ class Urbject:
         self.db = db
         self.urbjid = urbjid
 
-    def invoke(self, args, from_vatid, debug=None):
+    def invoke_static(self, args, from_vatid, debug=None):
+        i = Invocation(self.db, self)
         # args= are static for now: nothing magic
-        code, powid = self.get_code_and_powid()
-        outer_power = get_power(self.db, powid)
-        return execute(self.db, code, args, outer_power, from_vatid, debug)
+        return i.invoke_static(args, from_vatid, debug)
 
-    def invoke2(self, packed_args, from_vatid, debug=None):
-        code, powid = self.get_code_and_powid()
-        outer_power = get_power(self.db, powid)
-        outer_args = unpack_args(self.db, packed_args.power_json,
-                                 packed_args.power_clist_json,
-                                 outer_power.clist)
-        return execute(self.db, code,
-                       outer_args.inner_power, outer_power,
-                       from_vatid, debug)
+    def invoke(self, packed_args, from_vatid, debug=None):
+        i = Invocation(self.db, self)
+        return i.invoke(packed_args, from_vatid, debug)
 
     def get_code_and_powid(self):
         c = self.db.cursor()
