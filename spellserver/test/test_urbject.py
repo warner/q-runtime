@@ -1,9 +1,10 @@
 
+import json
 from twisted.trial import unittest
 from .common import ServerBase
 from ..memory import create_memory, Memory
 from ..urbject import create_urbject, create_power_for_memid, \
-     Urbject, Invocation
+     Urbject, Invocation, PackedPower
 
 F1 = """
 def call(args, power):
@@ -42,6 +43,11 @@ def call(args, power):
     #log('u2 is %s' % u2)
     power['memory']['u2'] = u2
     #u2.invoke({'delta': 5})
+"""
+
+F6 = """
+def call(args, power):
+    power['memory']['argfoo'] = args['foo']
 """
 
 class Test(ServerBase, unittest.TestCase):
@@ -108,3 +114,20 @@ class Test(ServerBase, unittest.TestCase):
         del u2id
         #Urbject(self.db, u2id).invoke({}, "from_vatid")
         #self.failUnlessEqual(m.get_static_data()["counter"], 5)
+
+    def pack_args(self, args, clist):
+        return PackedPower(json.dumps(args), json.dumps(clist))
+
+    def test_invoke_args(self):
+        memid = create_memory(self.db, {"counter": 0})
+        powid = create_power_for_memid(self.db, memid)
+        urbjid = create_urbject(self.db, powid, F6)
+        u = Urbject(self.db, urbjid)
+        args = self.pack_args({"foo": {"__power__": "reference", "clid": "1"}},
+                              {"1": "foo-urbjid"})
+        # TODO: replace foo-urbjid with something real (local or remote)
+        u.invoke(args, "from_vatid")
+        m = Memory(self.db, memid)
+        m_data, m_clist = m.get_data()
+        fooid = m_clist[str(m_data["argfoo"]["clid"])]
+        self.failUnlessEqual(fooid, "foo-urbjid")
