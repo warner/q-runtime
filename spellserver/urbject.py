@@ -74,21 +74,41 @@ class NativePower:
         return self.f(*args, **kwargs)
 
 
+class OuterPower:
+    """This is held outside the sandbox, and maps inside-sandbox placeholders
+    to the real powers."""
+    def __init__(self):
+        # .memory remembers the Memory object that was in power.memory . Can
+        # be None if this child was not given any memory.
+        self.memory = None
+        # .clist maps clids from .inner_power objects to real swissnums
+        self.clist = clist
+        self.clist = CList()
+
+    def set_inner_power(self, inner_power):
+        # inner_power is the dictionary passed to sandboxed code as power=
+        self.inner_power = inner_power
+
+    def set_memory(self, memory):
+        assert not self.memory, "only one Memory per Power"
+        self.memory = memory
+
 class Invocation:
     def __init__(self, db, urb):
         self.db = db
         self.urb = urb
 
         self.code, powid = urb.get_code_and_powid()
-        self.clist = CList()
-        up = Unpacking(self.db, self.clist)
-        self.outer_power = up.unpack_power(*get_power(self.db, powid))
+        self.outer_power = OuterPower()
+        up = Unpacking(self.db, self.outer_power)
+        inner_power = up.unpack_power(*get_power(self.db, powid))
+        self.outer_power.set_inner_power(inner_power)
 
     def invoke_static(self, static_args, from_vatid, debug=None):
         return self.execute(static_args, from_vatid, debug=None)
 
     def invoke(self, packed_args, from_vatid, debug=None):
-        up = Unpacking(self.db, self.clist)
+        up = Unpacking(self.db, self.outer_power)
         inner_args = up.unpack_args(packed_args.power_json,
                                     packed_args.power_clist_json)
         return self.execute(inner_args, from_vatid, debug)
@@ -207,64 +227,44 @@ class Packing:
         packed = PackedPower(new_power_json, json.dumps(new_clist))
         return packed
 
-class OuterPower:
-    """This is held outside the sandbox, and maps inside-sandbox placeholders
-    to the real powers."""
-    memory = None
-
-    def fill(self, inner_power, clist):
-        # inner_power is the dictionary passed to sandboxed code as power=
-        self.inner_power = inner_power
-        # .clist maps clids from .inner_power objects to real swissnums
-        self.clist = clist
-
-    def set_memory(self, memory):
-        # .memory remembers the Memory object that was in power.memory . Can
-        # be None if this child was not given any memory.
-        assert not self.memory, "only one Memory per Power"
-        self.memory = memory
-
 class Unpacking:
-    def __init__(self, db, clist):
+    def __init__(self, db, outer_power):
         self.db = db
-        self.clist = clist # maps clids to swissnums
-        self.outer_power = OuterPower()
+        self.outer_power = outer_power # we'll update memory and .clist
         self._used = False
 
     # choose exactly one of these three entry points
     def unpack_power(self, power_json, clist_json):
         self._call_once()
-        inner_power = self._unpack(power_json, clist_json, True, True)
-        return self._return_outer_power(inner_power)
+        return self._unpack(power_json, clist_json, True, True)
 
     def unpack_memory(self, power_json, clist_json):
         self._call_once()
-        inner_power = self._unpack(power_json, clist_json, True, False)
-        return self._return_outer_power(inner_power)
+        return self._unpack(power_json, clist_json, True, False)
 
     def unpack_args(self, power_json, clist_json):
         self._call_once()
-        inner_power = self._unpack(power_json, clist_json, False, False)
-        return self._return_outer_power(inner_power)
+        return self._unpack(power_json, clist_json, False, False)
 
     def _call_once(self):
         assert not self._used
         self._used = True
-
-    def _return_outer_power(self, inner_power):
-        self.outer_power.fill(inner_power, self.clist)
-        return self.outer_power
 
     def _unpack_memory(self, power_json, clist_json):
         assert self._used
         return self._unpack(power_json, clist_json, True, False)
 
     def _unpack(self, power_json, clist_json, allow_native, allow_memory):
-        # create the inner power object, and the clist, and the memorylist
+        # create the inner power object. Adds anything necessary to
+        # outer_power.clist and outer_power.memory
         def inner_make_urbject(code, child_power):
-            packed_power = pack_power(child_power, self.outer_power)
-            powid = create_power(db, packed_power)
-            urbjid = create_urbject(db, powid, code)
+            # the packer needs to pull swissnums from the outer_power.clid
+            # and compare against outer_power.memory to see if we're sharing
+            # memory with the child
+            p = Packing(self.db, self.outer_power)
+            packed_power = p.pack_power(child_power)
+            powid = create_power(self.db, packed_power)
+            urbjid = create_urbject(self.db, powid, code)
             # this will update Invocation.clist, adding new powers (for the
             # newly created object)
             clid = self.outer_power.clist.add(urbjid)
@@ -280,7 +280,7 @@ class Unpacking:
                     name = old_clist[old_clid]
                     if name == "make_urbject":
                         return NativePower(inner_make_urbject,
-                                           self.clist.add(name))
+                                           self.outer_power.clist.add(name))
                     raise ValueError("unknown native power %s" % (name,))
                 if ptype == "memory" and allow_memory:
                     memid = old_clist[old_clid]
@@ -295,7 +295,8 @@ class Unpacking:
                     data = self._unpack_memory(memory_json, memory_clist_json)
                     return data
                 if ptype == "reference":
-                    r = InnerReference(self.clist.add(old_clist[clid]))
+                    refid = old_clist[clid]
+                    r = InnerReference(self.outer_power.clist.add(refid))
                     return r
                 raise ValueError("unknown power type %s" % (ptype,))
             return dct
