@@ -56,7 +56,8 @@ CREATE TABLE `inbound_messages` -- undelivered messages
 CREATE TABLE `memory`
 (
  `memid` VARCHAR(256) UNIQUE, -- "mem0-base32.."
- `data_json` STRING
+ `data_json` STRING,
+ `data_clist_json` STRING
 );
 
 CREATE TABLE `power`

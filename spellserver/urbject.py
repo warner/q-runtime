@@ -88,13 +88,16 @@ def unpack_power(db, power_json, clist_json):
     # create the inner power object, and the clist, and the memorylist
     outer_power = OuterPower()
     def inner_make_urbject(code, child_power):
-        packed_power = pack_power(child_power, outer_power);
+        packed_power = pack_power(child_power, outer_power, allow_remote=True);
         powid = create_power(db, packed_power)
         urbjid = create_urbject(db, powid, code)
-        return urbjid
-    clist = json.loads(clist_json) # maps clids to swissnums
+        clid = outer_power.clist.add(urbjid)
+        return InnerReference(clid)
+    clist = CList(json.loads(clist_json)) # maps clids to swissnums
     memorized_dicts = {} # id(dict) -> Memory
     used_memory = {} # could be a Set if (Memory(a) is Memory(a)), but nope
+    def unpack_memory(memory_json, memory_clist_json):
+        XXX
     def hook(dct):
         if "__power__" in dct:
             ptype = dct["__power__"]
@@ -108,7 +111,7 @@ def unpack_power(db, power_json, clist_json):
             if ptype == "memory":
                 memid = clist[clid]
                 m = Memory(db, memid)
-                data = m.get_data()
+                data = m.get_data(unpack_memory)
                 memorized_dicts[id(data)] = m
                 used_memory[memid] = m
                 return data
@@ -151,7 +154,8 @@ class PackedPower:
 
 class PowerEncoder(json.JSONEncoder):
     def _iterencode_dict(self, dct, markers=None):
-        if id(dct) in self._power_memorized_dicts:
+        if (dct is not self._power_first_obj and
+            id(dct) in self._power_memorized_dicts):
             m = self._power_memorized_dicts[id(dct)]
             memid = m.memid
             new_clid = self._power_new_clist.add(memid)
@@ -171,8 +175,9 @@ class PowerEncoder(json.JSONEncoder):
             return {"__power__": "reference", "clid": new_clid}
         return json.JSONEncoder.default(self, obj)
 
-def pack_power(child_power, outer_power):
+def pack_power(child_power, outer_power, allow_remote):
     enc = PowerEncoder()
+    enc._power_first_obj = child_power # don't special-case this
     enc._power_old_clist = outer_power.clist
     enc._power_new_clist = power_clist = CList()
     enc._power_memorized_dicts = outer_power.memorized_dicts
@@ -194,8 +199,10 @@ def execute(db, code, args, outer_power, from_vatid, debug=None):
     eval(code, namespace, namespace)
     rc = namespace["call"](args, inner_power)
     del rc # rc is dropped for now
+    def packer(data):
+        return pack_power(data, outer_power, allow_remote=False)
     for m in outer_power.used_memory:
-        m.save()
+        m.save(packer)
 
 
 
@@ -211,6 +218,7 @@ class Urbject:
 
     def get_code_and_powid(self):
         c = self.db.cursor()
+        print "URBJID", self.urbjid
         c.execute("SELECT `code`,`powid` FROM `urbjects` WHERE `urbjid`=?",
                   (self.urbjid,))
         res = c.fetchall()
