@@ -302,13 +302,15 @@ class Server(service.MultiService):
         msg = {"command": "execute",
                "memid": memid,
                "code": code,
-               "args": json.dumps(args)}
+               "args_json": json.dumps(args),
+               "args_clist_json": json.dumps({})}
         self.send_message(vatid, json.dumps(msg))
 
     def send_invoke(self, vatid, urbjid, args):
         msg = {"command": "invoke",
                "urbjid": urbjid,
-               "args": args}
+               "args_json": json.dumps(args),
+               "args_clist_json": json.dumps({})}
         self.send_message(vatid, json.dumps(msg))
 
     def poke(self, body):
@@ -323,12 +325,12 @@ class Server(service.MultiService):
             cmd, vatid, memid = body.strip().split()
             code = ("def call(args, power):\n"
                     "    log('I have power!')\n")
-            args = {"a": 12}
+            args = {"foo": 12}
             self.send_execute(vatid, memid, code, args)
             return "execute sent"
         if body.startswith("invoke "):
             cmd, vatid, urbjid = body.strip().split()
-            args = {"a": 12}
+            args = {"foo": 12}
             self.send_invoke(vatid, urbjid, args)
             return "invoke sent"
         self.trigger_inbound()

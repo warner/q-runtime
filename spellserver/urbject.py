@@ -122,7 +122,7 @@ class Invocation:
         memory_contents = inner_power.get("memory")
         def log2(msg):
             log.msg(msg)
-            print msg
+            #print msg
         namespace = {"log": log2, "add": add}
         if debug:
             namespace["debug"] = debug
