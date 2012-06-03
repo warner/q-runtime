@@ -107,13 +107,9 @@ class Invocation:
         inner_power = up.unpack_power(*get_power(self.db, powid))
         self.outer_power.set_inner_power(inner_power)
 
-    def invoke_static(self, static_args, from_vatid, debug=None):
-        return self.execute(static_args, from_vatid, debug)
-
-    def invoke(self, packed_args, from_vatid, debug=None):
+    def invoke(self, args_json, args_clist_json, from_vatid, debug=None):
         up = Unpacking(self.db, self.outer_power)
-        inner_args = up.unpack_args(packed_args.power_json,
-                                    packed_args.power_clist_json)
+        inner_args = up.unpack_args(args_json, args_clist_json)
         return self.execute(inner_args, from_vatid, debug)
 
     def execute(self, args, from_vatid, debug=None):
@@ -335,16 +331,10 @@ class Urbject:
         self.db = db
         self.urbjid = urbjid
 
-    def invoke_static(self, args, from_vatid, debug=None):
+    def invoke(self, args, args_clist, from_vatid, debug=None):
         code, powid = self.get_code_and_powid()
         i = Invocation(self.db, code, powid)
-        # args= are static for now: nothing magic
-        return i.invoke_static(args, from_vatid, debug)
-
-    def invoke(self, packed_args, from_vatid, debug=None):
-        code, powid = self.get_code_and_powid()
-        i = Invocation(self.db, code, powid)
-        return i.invoke(packed_args, from_vatid, debug)
+        return i.invoke(args, args_clist, from_vatid, debug)
 
     def get_code_and_powid(self):
         c = self.db.cursor()
