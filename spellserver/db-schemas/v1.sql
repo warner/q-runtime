@@ -69,6 +69,6 @@ CREATE TABLE `power`
 CREATE TABLE `urbjects`
 (
  `urbjid` VARCHAR(256) UNIQUE, -- "urb0-base32.."
- `code` STRING,
- `powid` VARCHAR(256) -- "pow0-base32.."
+ `powid` VARCHAR(256), -- "pow0-base32.."
+ `code` STRING
 );

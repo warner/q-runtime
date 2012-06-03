@@ -1,5 +1,5 @@
 
-import base64
+import os, base64
 
 class BadPrefixError(Exception):
     pass
@@ -52,3 +52,6 @@ def from_ascii(s_ascii, prefix="", encoding="base64"):
     else:
         raise NotImplementedError
     return s_bytes
+
+def makeid(prefix=""):
+    return to_ascii(os.urandom(32), prefix, encoding="base32")
