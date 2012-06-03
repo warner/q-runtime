@@ -74,49 +74,64 @@ class NativePower:
         return self.f(*args, **kwargs)
 
 class OuterPower:
-    def fill(self, inner_power, clist, memorized_dicts, used_memory):
+    """This is held outside the sandbox, and maps inside-sandbox placeholders
+    to the real powers."""
+    def fill(self, inner_power, clist, memory):
         # inner_power is the dictionary passed to sandboxed code as power=
         self.inner_power = inner_power
         # .clist maps clids from .inner_power objects to real swissnums
         self.clist = clist
-        # .memorized_dicts tracks Memory-backed dictionaries in .inner_power
-        self.memorized_dicts = memorized_dicts
-        # .used_memory tracks Memory objects that will need saving
-        self.used_memory = used_memory
+        # .memory remembers the Memory object that was in power.memory . Can
+        # be None if this child was not given any memory.
+        self.memory = memory
 
 def unpack_power(db, power_json, clist_json):
+    return unpack(db, power_json, clist_json, True, True, None)
+def unpack_memory(db, power_json, clist_json, new_clist):
+    return unpack(db, power_json, clist_json, True, False, new_clist)
+def unpack_args(db, power_json, clist_json, new_clist):
+    return unpack(db, power_json, clist_json, False, False, new_clist)
+
+def unpack(db, power_json, clist_json, allow_native, allow_memory, new_clist):
     # create the inner power object, and the clist, and the memorylist
     outer_power = OuterPower()
     def inner_make_urbject(code, child_power):
-        packed_power = pack_power(child_power, outer_power, allow_remote=True);
+        packed_power = pack_power(child_power, outer_power)
         powid = create_power(db, packed_power)
         urbjid = create_urbject(db, powid, code)
         clid = outer_power.clist.add(urbjid)
         return InnerReference(clid)
-    clist = CList(json.loads(clist_json)) # maps clids to swissnums
-    memorized_dicts = {} # id(dict) -> Memory
-    used_memory = {} # could be a Set if (Memory(a) is Memory(a)), but nope
-    def unpack_memory(memory_json, memory_clist_json):
-        XXX
+    if new_clist is None:
+        # unpack_memory() needs to provide its own new_clist so the newly
+        # unpacked objects can be allocated clids properly. Likewise
+        # unpack_args() provides the clist from the unpack_power() call that
+        # just preceded it.
+        new_clist = CList() # maps clids to swissnums
+    old_clist = json.loads(clist_json)
+    memory = None
+
     def hook(dct):
         if "__power__" in dct:
             ptype = dct["__power__"]
-            clid = str(dct["clid"]) # points into the clist
+            old_clid = str(dct["clid"]) # points into old_clist
             # str because 'clist' keys (like all JSON keys) are strings
-            if ptype == "native":
-                name = clist[clid]
+            if ptype == "native" and allow_native:
+                name = old_clist[old_clid]
                 if name == "make_urbject":
-                    return NativePower(inner_make_urbject, clid)
+                    return NativePower(inner_make_urbject, new_clist.add(name))
                 raise ValueError("unknown native power %s" % (name,))
-            if ptype == "memory":
-                memid = clist[clid]
-                m = Memory(db, memid)
-                data = m.get_data(unpack_memory)
-                memorized_dicts[id(data)] = m
-                used_memory[memid] = m
+            if ptype == "memory" and allow_memory:
+                assert not memory, "only one Memory per Power"
+                memid = old_clist[old_clid]
+                # memid doesn't live in new_clist, just in OuterPower.memory
+                memory = Memory(db, memid)
+                memory_json, memory_clist_json = memory.get_raw_data()
+                # unpack_memory() also adds itens to new_clist
+                data = unpack_memory(db, memory_json, memory_clist_json,
+                                     new_clist).inner_power
                 return data
             if ptype == "reference":
-                r = InnerReference(clid)
+                r = InnerReference(new_clist.add(old_clist[clid]))
                 return r
             raise ValueError("unknown power type %s" % (ptype,))
         return dct
@@ -125,7 +140,7 @@ def unpack_power(db, power_json, clist_json):
     except:
         print "unpack_power exception, power_json='%s'" % power_json
         raise
-    outer_power.fill(inner_power, clist, memorized_dicts, used_memory.values())
+    outer_power.fill(inner_power, new_clist, memory)
     return outer_power
 
 def get_power(db, powid):
@@ -153,17 +168,8 @@ class PackedPower:
         self.power_clist_json = power_clist_json
 
 class PowerEncoder(json.JSONEncoder):
-    def _iterencode_dict(self, dct, markers=None):
-        if (dct is not self._power_first_obj and
-            id(dct) in self._power_memorized_dicts):
-            m = self._power_memorized_dicts[id(dct)]
-            memid = m.memid
-            new_clid = self._power_new_clist.add(memid)
-            dct = {"__power__": "memory", "clid": new_clid}
-        return json.JSONEncoder._iterencode_dict(self, dct, markers)
-
     def default(self, obj):
-        if isinstance(obj, NativePower):
+        if isinstance(obj, NativePower) and self._power_allow_native:
             old_clid = obj.clid
             name = self._power_old_clist[old_clid]
             new_clid = self._power_new_clist.add(name)
@@ -175,34 +181,71 @@ class PowerEncoder(json.JSONEncoder):
             return {"__power__": "reference", "clid": new_clid}
         return json.JSONEncoder.default(self, obj)
 
-def pack_power(child_power, outer_power, allow_remote):
+def pack_power(db, child_power, outer_power):
+    # used for make_object(code, power). Can serialize static, References,
+    # NativePowers, and one memory.
+    return pack(db, child_power, outer_power, True, True)
+def pack_memory(db, inner_memory, outer_power):
+    # Can serialize static, References, NativePowers, but not Memory.
+    return pack(db, inner_memory, outer_power, True, False)
+def pack_args(db, child_args, outer_power):
+    # Can serialize static and References, but not NativePowers or Memory
+    return pack(db, child_args, outer_power, False, False)
+
+def pack(db, child_power, outer_power, allow_native, allow_memory):
+    if allow_memory:
+        # we handle a top-level Memory object by pretending that the original
+        # data contains a {__power__:memory} dict. We must modify a copy, not
+        # the original.
+        child_power, old_child_power = {}, child_power
+        child_clist = CList(outer_power.clist) # copy
+        for k in old_child_power: # shallow copy
+            if k != "memory":
+                child_power[k] = old_child_power[k]
+        if old_child_power.get("memory") is not None:
+            if old_child_power["memory"] is outer_power.memory:
+                # the child will share the parent's Memory
+                new_clid = child_clist.add(outer_power.memory.memid)
+                child_power["memory"] = {"__power__": "memory",
+                                         "clid": new_clid}
+            else:
+                # the child gets a new Memory with some initial contents
+                initial_contents = old_child_power["memory"]
+                packed = pack_memory(db, initial_contents, outer_power)
+                memid = memory.create_memory(db, packed.contents, packed.clist)
+                new_clid = child_clist.add(memid)
+                child_power["memory"] = {"__power__": "memory",
+                                         "clid": new_clid}
+    else:
+        child_clist = outer_power.clist
+
     enc = PowerEncoder()
-    enc._power_first_obj = child_power # don't special-case this
-    enc._power_old_clist = outer_power.clist
-    enc._power_new_clist = power_clist = CList()
-    enc._power_memorized_dicts = outer_power.memorized_dicts
-    power_json = enc.encode(child_power)
-    packed_power = PackedPower(power_json, json.dumps(power_clist))
-    return packed_power
+    enc._power_allow_native = allow_native
+    enc._power_old_clist = child_clist
+    enc._power_new_clist = new_clist = CList()
+    new_power_json = enc.encode(child_power)
+    packed = PackedPower(new_power_json, json.dumps(new_clist))
+    return packed
+
 
 def execute(db, code, args, outer_power, from_vatid, debug=None):
     log.msg("EVAL <%s>" % (code,))
     log.msg("ARGS <%s>" % (args,))
     code = compile(code, "<from vatid %s>" % from_vatid, "exec")
-    inner_power = outer_power.inner_power
+    memory = outer_power.memory # save contents even if they trash 'power'
     def log2(msg):
         log.msg(msg)
         print msg
     namespace = {"log": log2, "add": add}
     if debug:
         namespace["debug"] = debug
+
     eval(code, namespace, namespace)
-    rc = namespace["call"](args, inner_power)
+    rc = namespace["call"](args, outer_power.inner_power)
     del rc # rc is dropped for now
-    def packer(data):
-        return pack_power(data, outer_power, allow_remote=False)
-    for m in outer_power.used_memory:
-        m.save(packer)
+
+    if memory:
+        memory.save(pack_memory(db, memory.data, outer_power))
 
 
 
@@ -212,9 +255,20 @@ class Urbject:
         self.urbjid = urbjid
 
     def invoke(self, args, from_vatid, debug=None):
+        # args= are static for now: nothing magic
         code, powid = self.get_code_and_powid()
         outer_power = get_power(self.db, powid)
         return execute(self.db, code, args, outer_power, from_vatid, debug)
+
+    def invoke2(self, packed_args, from_vatid, debug=None):
+        code, powid = self.get_code_and_powid()
+        outer_power = get_power(self.db, powid)
+        outer_args = unpack_args(self.db, packed_args.power_json,
+                                 packed_args.power_clist_json,
+                                 outer_power.clist)
+        return execute(self.db, code,
+                       outer_args.inner_power, outer_power,
+                       from_vatid, debug)
 
     def get_code_and_powid(self):
         c = self.db.cursor()
