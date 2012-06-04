@@ -64,16 +64,6 @@ class PokeOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
         ("message", "m", "", "Message to send"),
         ]
 
-class CreateObjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
-    pass
-class ListObjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
-    pass
-class CreateMethodOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
-    def parseArgs(self, basedir, objid, codefile):
-        BasedirArgument.parseArgs(self, basedir)
-        self.objid = objid
-        self.codefile = codefile
-
 
 class TestOptions(usage.Options):
     def parseArgs(self, *test_args):
@@ -81,22 +71,95 @@ class TestOptions(usage.Options):
             test_args = ["spellserver"]
         self.test_args = test_args
 
+
+class CreateMemoryOptions(BasedirParameterMixin, BasedirArgument,
+                          usage.Options):
+    optParameters = [
+        ("memory-file", "m", None, "file (JSON) with initial memory contents"),
+        ]
+
+class ListMemoryOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    pass
+
+class CreateUrbjectOptions(BasedirParameterMixin, BasedirArgument,
+                           usage.Options):
+    optFlags = [
+        ("no-memory", None, "deny persistent storage"),
+        ]
+    optParameters = [
+        ("memid", None, None, "memid to give to Urbject"),
+        ("memory-file", "m", None, "file (JSON) with initial memory contents"),
+        ]
+
+    def parseArgs(self, basedir, codefile):
+        BasedirArgument.parseArgs(self, basedir)
+        if self["no-memory"]:
+            self["memid"] = None
+        elif self["memory-file"]:
+            from .object_commands import create_memory_from_file
+            # TODO: get stdout/stderr from options
+            self["memid"] = create_memory_from_file(self["basedir"],
+                                                    self["memory-file"],
+                                                    sys.stderr)
+        self["code-file"] = codefile
+
+class ListUrbjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    pass
+
+class AdminOptions(usage.Options):
+    subCommands = [
+        ("create-memory", None, CreateMemoryOptions, "Make a memory slot"),
+        ("list-memory", None, ListMemoryOptions, "List all memory slots"),
+        ("create-urbject", None, CreateUrbjectOptions, "Make an Urbject"),
+        ("list-urbjects", None, ListUrbjectOptions, "List all urbjects"),
+        ]
+    def postOptions(self):
+        if not hasattr(self, 'subOptions'):
+            raise usage.UsageError("must specify a subcommand")
+
+def create_memory(*args):
+    from .object_commands import create_memory
+    return create_memory(*args)
+
+def list_memory(*args):
+    from .object_commands import list_memory
+    return list_memory(*args)
+
+def create_urbject(*args):
+    from .object_commands import create_urbject
+    return create_urbject(*args)
+
+def list_urbjects(*args):
+    from .object_commands import list_urbjects
+    return list_urbjects(*args)
+
+adminDispatch = {
+    "create-memory": create_memory,
+    "list-memory": list_memory,
+    "create-urbject": create_urbject,
+    "list-urbjects": list_urbjects,
+    }
+
+def do_admin(options, stdout, stderr):
+    so = options.subOptions
+    f = adminDispatch[options.subCommand]
+    return f(so, stdout, stderr)
+
 class Options(usage.Options):
     synopsis = "\nUsage: ssp <command>"
-    subCommands = [("create-node", None, CreateNodeOptions, "Create a node"),
-                   ("start", None, StartNodeOptions, "Start a node"),
-                   ("stop", None, StopNodeOptions, "Stop a node"),
-                   ("restart", None, RestartNodeOptions, "Restart a node"),
-                   ("open", None, OpenOptions, "Open web control panel"),
-                   ("gossip", None, GossipOptions, "Populate URL tables"),
+    subCommands = [
+        ("create-node", None, CreateNodeOptions, "Create a node"),
+        ("start", None, StartNodeOptions, "Start a node"),
+        ("stop", None, StopNodeOptions, "Stop a node"),
+        ("restart", None, RestartNodeOptions, "Restart a node"),
+        ("open", None, OpenOptions, "Open web control panel"),
+        ("gossip", None, GossipOptions, "Populate URL tables"),
 
-                   ("poke", None, PokeOptions, "Trigger event loop"),
-                   ("create-object", None, CreateObjectOptions, "Make object"),
-                   ("list-objects", None, ListObjectOptions, "List objects"),
-                   ("create-method", None, CreateMethodOptions, "Make method"),
+        ("poke", None, PokeOptions, "Trigger event loop"),
+        ("admin", None, AdminOptions, "admin commands"),
 
-                   ("test", None, TestOptions, "Run unit tests with trial"),
-                   ]
+        ("test", None, TestOptions, "Run unit tests with trial"),
+        ]
 
     def getUsage(self, **kwargs):
         t = usage.Options.getUsage(self, **kwargs)
@@ -134,18 +197,6 @@ def poke(*args):
     from .poke import poke
     return poke(*args)
 
-def create_object(*args):
-    from .object_commands import create_object
-    return create_object(*args)
-
-def list_objects(*args):
-    from .object_commands import list_objects
-    return list_objects(*args)
-
-def create_method(*args):
-    from .object_commands import create_method
-    return create_method(*args)
-
 def test(so, stdout, stderr):
     from twisted.scripts import trial
     sys.argv = ["trial"] + list(so.test_args)
@@ -158,9 +209,7 @@ DISPATCH = {"create-node": create_node,
             "restart": restart,
             "gossip": gossip,
             "open": open_control_panel,
-            "create-object": create_object,
-            "list-objects": list_objects,
-            "create-method": create_method,
+            "admin": do_admin,
             "poke": poke,
             "test": test,
             }
