@@ -28,6 +28,23 @@ def call(args, power):
     u2.send({'foo': 56})
 """
 
+F4 = """
+F4a = '''
+def call(args, power):
+    power['memory']['results'] = args['response']
+'''
+
+def call(args, power):
+    u2 = power['make_urbject'](F4a, power)
+    args['remote'].send({'callback': u2})
+"""
+
+F4b = """
+def call(args, power):
+    args['callback'].send({'response': 34})
+"""
+
+
 class Local(ServerBase, PollMixin, unittest.TestCase):
 
     def test_basic(self):
@@ -88,6 +105,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         memid_1 = create_memory(self.db)
         powid_1 = create_power_for_memid(self.db, memid_1)
         urbjid_1 = create_urbject(self.db, powid_1, F1)
+        vatid_1 = self.server.vatid
 
         memid_2 = create_memory(self.db)
         powid_2 = create_power_for_memid(self.db, memid_2)
@@ -97,7 +115,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
 
         # trigger F2({ref:F1})
         args = {"ref": {"__power__": "reference", "clid": "1"}}
-        args_clist = {"1": urbjid_1}
+        args_clist = {"1": (vatid_1,urbjid_1)}
         msg = {"command": "invoke",
                "urbjid": urbjid_2,
                "args_json": json.dumps(args),
@@ -168,6 +186,41 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
             m = Memory(self.db, memid)
             self.failUnlessEqual(m.get_static_data()["argfoo"], 456)
         d.addCallback(_then2)
+        return d
+
+    def test_callback(self):
+        # create F4 in server1, and F4b in server2, then invoke F4. F4 will
+        # create F4a as a callback handler, then send a message (containing a
+        # reference to F4a) over to F4b, which will send a message back to
+        # F4a. Confirm that it worked by looking for the memory that F4a
+        # stashes.
+        memid = create_memory(self.db)
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
+        urbjid_f4 = create_urbject(self.db, powid, F4)
+
+        memid2 = create_memory(self.db2)
+        urbjid_f2 = create_urbject(self.db2,
+                                   create_power_for_memid(self.db2, memid2),
+                                   F4b)
+
+        args = {"remote": {"__power__": "reference", "clid": "1"}}
+        args_clist = {"1": (self.server2.vatid, urbjid_f2)}
+        msg = {"command": "invoke",
+               "urbjid": urbjid_f4,
+               "args_json": json.dumps(args),
+               "args_clist_json": json.dumps(args_clist),
+               }
+        msg_json = json.dumps(msg)
+        self.server2.send_message(self.server.vatid, msg_json)
+        # wait for both nodes to process the messages. server1 receives the
+        # F4 invocation, then server2 receives the F4b invocation, then
+        # server1 receives the final F4a invocation
+        d = self.poll(lambda: self.server._debug_processed_counter >= 2
+                      and self.server2._debug_processed_counter >= 1)
+        def _then(ign):
+            m = Memory(self.db, memid)
+            self.failUnlessEqual(m.get_static_data()["results"], 34)
+        d.addCallback(_then)
         return d
 
 class Poke(TwoServerBase, PollMixin, unittest.TestCase):

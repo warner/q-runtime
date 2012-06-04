@@ -101,6 +101,7 @@ class OuterPower:
 class Invocation:
     def __init__(self, server, db, code, powid):
         self._server = server
+        self._vatid = server.vatid
         self.db = db
         self.code = code
 
@@ -140,13 +141,18 @@ class Invocation:
     def outbound_message(self, clid, args):
         packed_args = Packing(self.db, self.outer_power).pack_args(args)
         # local-only for now
-        target_vatid = self._server.vatid
+        target_vatid, target_urbjid = self.outer_power.clist[clid]
         msg = {"command": "invoke",
-               "urbjid": self.outer_power.clist[clid],
+               "urbjid": target_urbjid,
                "args_json": packed_args.power_json,
                "args_clist_json": packed_args.power_clist_json}
         self._server.send_message(target_vatid, json.dumps(msg))
         return None # no results-Promises yet
+
+    def add_local_urbject(self, urbjid):
+        assert self._vatid
+        clid = self.outer_power.clist.add( (self._vatid, urbjid) )
+        return clid
 
 class PackedPower:
     def __init__(self, power_json, power_clist_json):
@@ -165,8 +171,8 @@ class PowerEncoder(json.JSONEncoder):
             return {"__power__": "native", "clid": new_clid}
         if isinstance(obj, InnerReference):
             old_clid = obj._clid
-            urbjid = self._power_old_clist[old_clid]
-            new_clid = self._power_new_clist.add(urbjid)
+            refid = self._power_old_clist[old_clid]
+            new_clid = self._power_new_clist.add(refid)
             return {"__power__": "reference", "clid": new_clid}
         return json.JSONEncoder.default(self, obj)
 
@@ -282,7 +288,7 @@ class Unpacking:
             urbjid = create_urbject(self.db, powid, code)
             # this will update Invocation.clist, adding new powers (for the
             # newly created object)
-            clid = self.outer_power.clist.add(urbjid)
+            clid = self.invocation.add_local_urbject(urbjid)
             return InnerReference(self.invocation, clid)
 
         old_clist = json.loads(clist_json)

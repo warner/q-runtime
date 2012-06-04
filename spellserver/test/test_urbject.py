@@ -43,20 +43,20 @@ class Test(ServerBase, unittest.TestCase):
         memid = create_memory(self.db)
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F1)
-        u = Urbject(None, self.db, urbjid)
+        u = Urbject(self.server, self.db, urbjid)
         del u
 
     def test_execute(self):
         msgs = []
         powid = create_power_for_memid(self.db)
-        i = Invocation(None, self.db, F1, powid)
+        i = Invocation(self.server, self.db, F1, powid)
         i.invoke("{}", "{}", "from_vatid", debug=msgs.append)
         self.failUnlessEqual(msgs, ["I have power!"])
 
     def test_memory(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
-        i = Invocation(None, self.db, F2, powid)
+        i = Invocation(self.server, self.db, F2, powid)
         i.invoke('{"delta": 1}', "{}", "from_vatid")
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_static_data()["counter"], 1)
@@ -65,7 +65,7 @@ class Test(ServerBase, unittest.TestCase):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F2)
-        u = Urbject(None, self.db, urbjid)
+        u = Urbject(self.server, self.db, urbjid)
         u.invoke('{"delta": 2}', "{}", "from_vatid")
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_static_data()["counter"], 2)
@@ -75,7 +75,7 @@ class Test(ServerBase, unittest.TestCase):
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=False)
         urbjid = create_urbject(self.db, powid, F4)
         msgs = []
-        u = Urbject(None, self.db, urbjid)
+        u = Urbject(self.server, self.db, urbjid)
         u.invoke("{}", "{}", "from_vatid", debug=msgs.append)
         self.failUnlessEqual(msgs, [False])
 
@@ -83,11 +83,11 @@ class Test(ServerBase, unittest.TestCase):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F3)
-        Urbject(None, self.db, urbjid).invoke("{}", "{}", "from_vatid")
+        Urbject(self.server, self.db, urbjid).invoke("{}", "{}", "from_vatid")
         m = Memory(self.db, memid)
         m_data, m_clist = m.get_data()
-        u2id = m_clist[str(m_data["u2"]["clid"])]
-        Urbject(None, self.db, u2id).invoke("{}", "{}", "from_vatid")
+        u2id = m_clist[str(m_data["u2"]["clid"])][1]
+        Urbject(self.server, self.db, u2id).invoke("{}", "{}", "from_vatid")
         self.failUnlessEqual(m.get_static_data()["counter"], 10)
 
     def pack_args(self, args, clist):
@@ -97,7 +97,7 @@ class Test(ServerBase, unittest.TestCase):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F5)
-        u = Urbject(None, self.db, urbjid)
+        u = Urbject(self.server, self.db, urbjid)
         args = json.dumps({"foo": {"__power__": "reference", "clid": "1"}})
         args_clist = json.dumps({"1": "foo-urbjid"})
         # TODO: replace foo-urbjid with something real (local or remote)
