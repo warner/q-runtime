@@ -311,12 +311,12 @@ class Server(service.MultiService):
         if command == "execute":
             memid = str(msg["memid"])
             powid = urbject.create_power_for_memid(self.db, memid)
-            i = urbject.Invocation(self.db, msg["code"], powid)
+            i = urbject.Invocation(self, self.db, msg["code"], powid)
             i.invoke(msg["args_json"], "{}", from_vatid)
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])
-            u = urbject.Urbject(self.db, urbjid)
+            u = urbject.Urbject(self, self.db, urbjid)
             u.invoke(msg["args_json"], msg["args_clist_json"], from_vatid)
             return
         pass

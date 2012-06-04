@@ -61,10 +61,11 @@ def create_power_for_memid(db, memid=None, grant_make_urbject=False):
 # in the table, and catch InnerReferences with isinstance().
 
 class InnerReference:
-    def __init__(self, clid):
-        self.clid = clid
-    def invoke(self, args):
-        NotImplementedError
+    def __init__(self, invocation, clid):
+        self._invocation = invocation
+        self._clid = clid
+    def send(self, args):
+        return self._invocation.outbound_message(self._clid, args)
 
 class NativePower:
     def __init__(self, f, clid):
@@ -98,17 +99,18 @@ class OuterPower:
         self.memory_data = memory_data
 
 class Invocation:
-    def __init__(self, db, code, powid):
+    def __init__(self, server, db, code, powid):
+        self._server = server
         self.db = db
         self.code = code
 
         self.outer_power = OuterPower()
-        up = Unpacking(self.db, self.outer_power)
+        up = Unpacking(self.db, self, self.outer_power)
         inner_power = up.unpack_power(*get_power(self.db, powid))
         self.outer_power.set_inner_power(inner_power)
 
     def invoke(self, args_json, args_clist_json, from_vatid, debug=None):
-        up = Unpacking(self.db, self.outer_power)
+        up = Unpacking(self.db, self, self.outer_power)
         inner_args = up.unpack_args(args_json, args_clist_json)
         return self.execute(inner_args, from_vatid, debug)
 
@@ -135,6 +137,16 @@ class Invocation:
             p = Packing(self.db, self.outer_power)
             memory.save(p.pack_memory(memory_contents))
 
+    def outbound_message(self, clid, args):
+        packed_args = Packing(self.db, self.outer_power).pack_args(args)
+        # local-only for now
+        target_vatid = self._server.vatid
+        msg = {"command": "invoke",
+               "urbjid": self.outer_power.clist[clid],
+               "args_json": packed_args.power_json,
+               "args_clist_json": packed_args.power_clist_json}
+        self._server.send_message(target_vatid, json.dumps(msg))
+        return None # no results-Promises yet
 
 class PackedPower:
     def __init__(self, power_json, power_clist_json):
@@ -152,7 +164,7 @@ class PowerEncoder(json.JSONEncoder):
             new_clid = self._power_new_clist.add(name)
             return {"__power__": "native", "clid": new_clid}
         if isinstance(obj, InnerReference):
-            old_clid = obj.clid
+            old_clid = obj._clid
             urbjid = self._power_old_clist[old_clid]
             new_clid = self._power_new_clist.add(urbjid)
             return {"__power__": "reference", "clid": new_clid}
@@ -227,8 +239,9 @@ class Packing:
         return packed
 
 class Unpacking:
-    def __init__(self, db, outer_power):
+    def __init__(self, db, invocation, outer_power):
         self.db = db
+        self.invocation = invocation
         self.outer_power = outer_power # we'll update memory and .clist
         self._used = False
 
@@ -262,12 +275,15 @@ class Unpacking:
             # memory with the child
             p = Packing(self.db, self.outer_power)
             packed_power = p.pack_power(child_power)
+            # TODO: compare child_power against outer_power.inner_power, if
+            # they're identical, just re-use the existing powid instead of
+            # creating a new one
             powid = create_power(self.db, packed_power)
             urbjid = create_urbject(self.db, powid, code)
             # this will update Invocation.clist, adding new powers (for the
             # newly created object)
             clid = self.outer_power.clist.add(urbjid)
-            return InnerReference(clid)
+            return InnerReference(self.invocation, clid)
 
         old_clist = json.loads(clist_json)
         def hook(dct):
@@ -295,7 +311,8 @@ class Unpacking:
                     return data
                 if ptype == "reference":
                     refid = old_clist[old_clid]
-                    r = InnerReference(self.outer_power.clist.add(refid))
+                    r = InnerReference(self.invocation,
+                                       self.outer_power.clist.add(refid))
                     return r
                 raise ValueError("unknown power type %s" % (ptype,))
             return dct
@@ -327,13 +344,14 @@ def add(a, b):
 
 
 class Urbject:
-    def __init__(self, db, urbjid):
+    def __init__(self, server, db, urbjid):
+        self._server = server
         self.db = db
         self.urbjid = urbjid
 
     def invoke(self, args, args_clist, from_vatid, debug=None):
         code, powid = self.get_code_and_powid()
-        i = Invocation(self.db, code, powid)
+        i = Invocation(self._server, self.db, code, powid)
         return i.invoke(args, args_clist, from_vatid, debug)
 
     def get_code_and_powid(self):

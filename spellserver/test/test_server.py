@@ -12,6 +12,22 @@ def call(args, power):
     power['memory']['argfoo'] = args['foo']
 """
 
+F2 = """
+def call(args, power):
+    args['ref'].send({'foo': 34})
+"""
+
+F3 = """
+F3a = '''
+def call(args, power):
+    power['memory']['argfoo'] = args['foo']
+'''
+
+def call(args, power):
+    u2 = power['make_urbject'](F3a, power)
+    u2.send({'foo': 56})
+"""
+
 class Local(ServerBase, PollMixin, unittest.TestCase):
 
     def test_basic(self):
@@ -65,6 +81,56 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         def _then(ign):
             m = Memory(self.db, memid)
             self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
+        d.addCallback(_then)
+        return d
+
+    def test_send_from_sandbox(self):
+        memid_1 = create_memory(self.db)
+        powid_1 = create_power_for_memid(self.db, memid_1)
+        urbjid_1 = create_urbject(self.db, powid_1, F1)
+
+        memid_2 = create_memory(self.db)
+        powid_2 = create_power_for_memid(self.db, memid_2)
+        urbjid_2 = create_urbject(self.db, powid_2, F2)
+
+        #urb_2.add_reference_to_power("ref", urbjid_1)
+
+        # trigger F2({ref:F1})
+        args = {"ref": {"__power__": "reference", "clid": "1"}}
+        args_clist = {"1": urbjid_1}
+        msg = {"command": "invoke",
+               "urbjid": urbjid_2,
+               "args_json": json.dumps(args),
+               "args_clist_json": json.dumps(args_clist),
+               }
+
+        self.server.process_request(msg, "from-vatid")
+        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        def _then(ign):
+            m = Memory(self.db, memid_1)
+            m_data, m_clist = m.get_data()
+            self.failUnlessEqual(m_data["argfoo"], 34)
+        d.addCallback(_then)
+        return d
+
+    def test_make_and_send(self):
+        memid = create_memory(self.db)
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
+        urbjid = create_urbject(self.db, powid, F3)
+
+        # trigger F3()
+        msg = {"command": "invoke",
+               "urbjid": urbjid,
+               "args_json": json.dumps({}),
+               "args_clist_json": json.dumps({}),
+               }
+
+        self.server.process_request(msg, "from-vatid")
+        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        def _then(ign):
+            m = Memory(self.db, memid)
+            m_data, m_clist = m.get_data()
+            self.failUnlessEqual(m_data["argfoo"], 56)
         d.addCallback(_then)
         return d
 
