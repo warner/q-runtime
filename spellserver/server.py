@@ -169,9 +169,35 @@ class Server(service.MultiService):
         if vatids:
             self.trigger_inbound() # more work to do, later
 
+    def send_loopback(self, msg):
+        c = self.db.cursor()
+        c.execute("SELECT next_msgnum FROM inbound_msgnums"
+                  " WHERE from_vatid=? LIMIT 1", (self.vatid,))
+        data = c.fetchall()
+        if data:
+            next_msgnum = data[0][0]
+        else:
+            c.execute("INSERT INTO inbound_msgnums VALUES (?,?)",
+                      (self.vatid, 0))
+            self.db.commit()
+            next_msgnum = 0
+        msg_json = msg.decode("utf-8")
+        c.execute("INSERT INTO `inbound_messages` VALUES (?,?,?)",
+                  (self.vatid, next_msgnum, msg_json))
+        c.execute("UPDATE `inbound_msgnums`"
+                  " SET `next_msgnum`=?"
+                  " WHERE `from_vatid`=?",
+                  (next_msgnum+1, self.vatid))
+        self.db.commit()
+        self.trigger_inbound()
+
     def send_message(self, their_vatid, msg):
         assert isinstance(msg, (str, unicode)), "should be a json object, not %s" % type(msg)
         assert msg.startswith("{")
+        if their_vatid == self.vatid:
+            self.send_loopback(msg)
+            return
+
         c = self.db.cursor()
         c.execute("SELECT `next_msgnum` FROM `outbound_msgnums`"
                   " WHERE `to_vatid`=? LIMIT 1", (their_vatid,))

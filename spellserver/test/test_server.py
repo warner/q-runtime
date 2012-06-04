@@ -12,7 +12,7 @@ def call(args, power):
     power['memory']['argfoo'] = args['foo']
 """
 
-class Local(ServerBase, unittest.TestCase):
+class Local(ServerBase, PollMixin, unittest.TestCase):
 
     def test_basic(self):
         memid = create_memory(self.db)
@@ -47,6 +47,26 @@ class Local(ServerBase, unittest.TestCase):
         m_data, m_clist = m.get_data()
         fooid = m_clist[str(m_data["argfoo"]["clid"])]
         self.failUnlessEqual(fooid, "foo-urbjid")
+
+    def test_loopback(self):
+        memid = create_memory(self.db)
+        powid = create_power_for_memid(self.db, memid)
+        urbjid = create_urbject(self.db, powid, F1)
+
+        msg = {"command": "invoke",
+               "urbjid": urbjid,
+               "args_json": json.dumps({"foo": 123}),
+               "args_clist_json": json.dumps({}),
+               }
+        msg_json = json.dumps(msg)
+        self.server.send_message(self.server.vatid, msg_json) # to yourself
+        # now wait for the first node to process it
+        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        def _then(ign):
+            m = Memory(self.db, memid)
+            self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
+        d.addCallback(_then)
+        return d
 
 class Remote(TwoServerBase, PollMixin, unittest.TestCase):
 
