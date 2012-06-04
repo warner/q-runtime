@@ -218,6 +218,13 @@ class Packing:
         return self._pack(inner_memory, True, False)
 
     def _build_fake_memory(self, old_memory):
+        # XXX this will need to insert different objects in our copy, because
+        # the confined code must be prohibited from inserting these same
+        # objects to violate confinement (our encoder needs to reject
+        # '__power__' properties from the inner code). The use of 'clid'
+        # prevents them from gaining any new powers, but in the future we'll
+        # probably change this to use swissnums directly, at which point
+        # it'll become pretty important.
         if old_memory is self.outer_power.memory_data:
             # the child will share the parent's Memory
             new_clid = self.clist.add(self.outer_power.memory.memid)
