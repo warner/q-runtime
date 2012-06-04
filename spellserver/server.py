@@ -4,10 +4,10 @@ from binascii import hexlify, unhexlify
 from twisted.application import service
 from twisted.web.client import getPage
 from twisted.python import log
-from foolscap.api import eventually
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
 from . import util, urbject
+from .eventual import eventually
 from .memory import create_memory
 
 
