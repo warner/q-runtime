@@ -1,5 +1,5 @@
 
-import os, json, copy
+import os, json, copy, weakref
 from twisted.python import log
 from . import util
 from .memory import Memory, create_raw_memory
@@ -61,16 +61,14 @@ def create_power_for_memid(db, memid=None, grant_make_urbject=False):
 # in the table, and catch InnerReferences with isinstance().
 
 class InnerReference:
-    def __init__(self, invocation, clid):
+    def __init__(self, invocation):
         self._invocation = invocation
-        self._clid = clid
     def send(self, args):
-        return self._invocation.outbound_message(self._clid, args)
+        return self._invocation.outbound_message(self, args)
 
 class NativePower:
-    def __init__(self, f, clid):
+    def __init__(self, f):
         self.f = f
-        self.clid = clid
     def __call__(self, *args, **kwargs):
         return self.f(*args, **kwargs)
 
@@ -78,7 +76,7 @@ class NativePower:
 class OuterPower:
     """This is held outside the sandbox, and maps inside-sandbox placeholders
     to the real powers."""
-    def __init__(self):
+    def __init__(self, swissnums):
         # .memory remembers the Memory object that was in power.memory . Can
         # be None if this child was not given any memory. .memory_data is the
         # actual dictionary, used for object comparison in make_urbject() to
@@ -86,8 +84,10 @@ class OuterPower:
         # our own (and thus should be shared)
         self.memory = None
         self.memory_data = None
-        # .clist maps clids from .inner_power objects to real swissnums
-        self.clist = CList()
+        # swissnums maps from an object (NativePower or InnerReference) to
+        # swissnum, via a WeakKeyDictionary. This lets us avoid allocating
+        # clids just for OuterPower.
+        self.swissnums = swissnums
 
     def set_inner_power(self, inner_power):
         # inner_power is the dictionary passed to sandboxed code as power=
@@ -107,13 +107,16 @@ def inner_add(a, b):
 
 
 class Invocation:
-    def __init__(self, server, db, code, powid):
+    def __init__(self, server, db, code, powid, swissnums=None):
         self._server = server
         self._vatid = server.vatid
         self.db = db
         self.code = code
-
-        self.outer_power = OuterPower()
+        # this maps InnerReference->swissnum
+        if swissnums is None:
+            swissnums = weakref.WeakKeyDictionary()
+        self.swissnums = swissnums
+        self.outer_power = OuterPower(self.swissnums)
         up = Unpacking(self.db, self, self.outer_power)
         inner_power = up.unpack_power(*get_power(self.db, powid))
         self.outer_power.set_inner_power(inner_power)
@@ -146,10 +149,10 @@ class Invocation:
             p = Packing(self.db, self.outer_power)
             memory.save(p.pack_memory(memory_contents))
 
-    def outbound_message(self, clid, args):
+    def outbound_message(self, inner_ref, args):
         packed_args = Packing(self.db, self.outer_power).pack_args(args)
         # local-only for now
-        target_vatid, target_urbjid = self.outer_power.clist[clid]
+        target_vatid, target_urbjid = self.swissnums[inner_ref]
         msg = {"command": "invoke",
                "urbjid": target_urbjid,
                "args_json": packed_args.power_json,
@@ -157,10 +160,9 @@ class Invocation:
         self._server.send_message(target_vatid, json.dumps(msg))
         return None # no results-Promises yet
 
-    def add_local_urbject(self, urbjid):
+    def add_local_urbject(self, inner_ref, urbjid):
         assert self._vatid
-        clid = self.outer_power.clist.add( (self._vatid, urbjid) )
-        return clid
+        self.swissnums[inner_ref] = (self._vatid, urbjid)
 
 class PackedPower:
     def __init__(self, power_json, power_clist_json):
@@ -173,13 +175,11 @@ class PackedPower:
 class PowerEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, NativePower) and self._power_allow_native:
-            old_clid = obj.clid
-            name = self._power_old_clist[old_clid]
+            name = self._power_old_swissnums[obj]
             new_clid = self._power_new_clist.add(name)
             return {"__power__": "native", "clid": new_clid}
         if isinstance(obj, InnerReference):
-            old_clid = obj._clid
-            refid = self._power_old_clist[old_clid]
+            refid = self._power_old_swissnums[obj]
             new_clid = self._power_new_clist.add(refid)
             return {"__power__": "reference", "clid": new_clid}
         return json.JSONEncoder.default(self, obj)
@@ -246,7 +246,7 @@ class Packing:
 
         enc = PowerEncoder()
         enc._power_allow_native = allow_native
-        enc._power_old_clist = self.outer_power.clist
+        enc._power_old_swissnums = self.outer_power.swissnums
         enc._power_new_clist = self.clist
         new_power_json = enc.encode(child_power)
         packed = PackedPower(new_power_json, json.dumps(self.clist))
@@ -256,7 +256,7 @@ class Unpacking:
     def __init__(self, db, invocation, outer_power):
         self.db = db
         self.invocation = invocation
-        self.outer_power = outer_power # we'll update memory and .clist
+        self.outer_power = outer_power # we'll update memory and .swissnums
         self._used = False
 
     # choose exactly one of these three entry points
@@ -296,8 +296,9 @@ class Unpacking:
             urbjid = create_urbject(self.db, powid, code)
             # this will update Invocation.clist, adding new powers (for the
             # newly created object)
-            clid = self.invocation.add_local_urbject(urbjid)
-            return InnerReference(self.invocation, clid)
+            ir = InnerReference(self.invocation)
+            self.invocation.add_local_urbject(ir, urbjid)
+            return ir
 
         old_clist = json.loads(clist_json)
         def hook(dct):
@@ -308,8 +309,9 @@ class Unpacking:
                 if ptype == "native" and allow_native:
                     name = old_clist[old_clid]
                     if name == "make_urbject":
-                        return NativePower(inner_make_urbject,
-                                           self.outer_power.clist.add(name))
+                        o = NativePower(inner_make_urbject)
+                        self.outer_power.swissnums[o] = name
+                        return o
                     raise ValueError("unknown native power %s" % (name,))
                 if ptype == "memory" and allow_memory:
                     memid = old_clist[old_clid]
@@ -325,8 +327,8 @@ class Unpacking:
                     return data
                 if ptype == "reference":
                     refid = old_clist[old_clid]
-                    r = InnerReference(self.invocation,
-                                       self.outer_power.clist.add(refid))
+                    r = InnerReference(self.invocation)
+                    self.outer_power.swissnums[r] = refid
                     return r
                 raise ValueError("unknown power type %s" % (ptype,))
             return dct
