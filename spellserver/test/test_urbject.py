@@ -49,6 +49,42 @@ def call(args, power):
     power['memory']['u2'] = u2
 """
 
+F7 = """
+F7a = '''
+def call(args, power):
+    mem, deltas = args
+    assert isinstance(deltas, set) # ref.call() can take arbitrary local args
+    # including references to Memory objects, or pieces of them, on which
+    # changes will be visible to the parent as soon as we return
+    mem['counter'] += 10
+    # and our parent can add extra powers
+    power['memory']['counter'] += power['extra']
+    for delta in deltas:
+        power['memory']['counter'] += delta
+    return 20
+'''
+
+F7b = '''
+def call(delta, power):
+    # or objects can be given independent memory
+    power['memory']['counter'] += delta
+    return 30
+'''
+
+def call(args, power):
+    u2 = power['make_urbject'](F7a, add(power, {'extra': 5}))
+    power['memory']['counter'] = 0;
+    args = (power['memory'], set([2,1]))
+    rc = u2.call(args) # this is synchronous
+    assert rc == 20, rc
+    power['memory']['rc'] = rc
+    u3_power = add(power, {'memory': {'counter': 0}}) # independent memory
+    u3 = power['make_urbject'](F7b, u3_power)
+    rc = u3.call(100)
+    assert rc == 30
+    assert power['memory']['counter'] == 18, power['memory']['counter']
+"""
+
 class Test(ServerBase, unittest.TestCase):
 
     def test_basic(self):
@@ -129,3 +165,14 @@ class Test(ServerBase, unittest.TestCase):
         u2id = m_clist[str(m_data["u2"]["clid"])][1]
         Urbject(self.server, self.db, u2id).invoke("{}", "{}", "from_vatid")
         self.failUnlessEqual(m.get_static_data()["counter"], 15)
+
+    def test_call_sync(self):
+        memid = create_memory(self.db, {"counter": 0})
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
+        urbjid = create_urbject(self.db, powid, F7)
+        Urbject(self.server, self.db, urbjid).invoke("{}", "{}", "from_vatid")
+        # that will throw an exception unless it worked, but check anyways in
+        # case the exception-handling code gets broken
+        m = Memory(self.db, memid)
+        self.failUnlessEqual(m.get_static_data()["counter"], 18)
+        self.failUnlessEqual(m.get_static_data()["rc"], 20)
