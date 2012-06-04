@@ -98,6 +98,14 @@ class OuterPower:
         self.memory = memory
         self.memory_data = memory_data
 
+def inner_add(a, b):
+    c = copy.copy(a) # shallow. We want p=add(power, stuff) to retain the
+                     # object identity of "p.memory is power.memory"
+    for key in b:
+        c[key] = b[key]
+    return c
+
+
 class Invocation:
     def __init__(self, server, db, code, powid):
         self._server = server
@@ -126,7 +134,7 @@ class Invocation:
         def log2(msg):
             log.msg(msg)
             #print msg
-        namespace = {"log": log2, "add": add}
+        namespace = {"log": log2, "add": inner_add}
         if debug:
             namespace["debug"] = debug
 
@@ -338,14 +346,6 @@ def get_power(db, powid):
     assert results, "no powid %s" % powid
     (power_json, power_clist_json) = results[0]
     return (power_json, power_clist_json)
-
-
-def add(a, b):
-    c = copy.deepcopy(a)
-    for key in b:
-        c[key] = b[key]
-    return c
-
 
 
 

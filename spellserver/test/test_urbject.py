@@ -37,6 +37,18 @@ def call(args, power):
     power['memory']['argfoo'] = args['foo']
 """
 
+F6 = """
+F6a = '''
+def call(args, power):
+    power['memory']['counter'] += 10
+    power['memory']['counter'] += power['extra']
+'''
+
+def call(args, power):
+    u2 = power['make_urbject'](F6a, add(power, {'extra': 5}))
+    power['memory']['u2'] = u2
+"""
+
 class Test(ServerBase, unittest.TestCase):
 
     def test_basic(self):
@@ -106,3 +118,14 @@ class Test(ServerBase, unittest.TestCase):
         m_data, m_clist = m.get_data()
         fooid = m_clist[str(m_data["argfoo"]["clid"])]
         self.failUnlessEqual(fooid, "foo-urbjid")
+
+    def test_add(self):
+        memid = create_memory(self.db, {"counter": 0})
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
+        urbjid = create_urbject(self.db, powid, F6)
+        Urbject(self.server, self.db, urbjid).invoke("{}", "{}", "from_vatid")
+        m = Memory(self.db, memid)
+        m_data, m_clist = m.get_data()
+        u2id = m_clist[str(m_data["u2"]["clid"])][1]
+        Urbject(self.server, self.db, u2id).invoke("{}", "{}", "from_vatid")
+        self.failUnlessEqual(m.get_static_data()["counter"], 15)
