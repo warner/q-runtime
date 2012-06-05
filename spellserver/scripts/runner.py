@@ -71,6 +71,24 @@ class TestOptions(usage.Options):
             test_args = ["spellserver"]
         self.test_args = test_args
 
+class InstallOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
+    def parseArgs(self, basedir, codedir):
+        BasedirArgument.parseArgs(self, basedir)
+        self["codedir"] = codedir
+    def getSynopsis(self):
+        return "Usage: ssp install BASEDIR CODEDIR"
+    longdesc = """\
+Take a directory of source code, and install it into the given (local)
+server. For now, the directory must contain one or more .py files, with one
+function per file, plus an optional memory.json . If memory.json is present,
+its contents (as a JSON object) will be used for the object's initial memory
+contents. If omitted, the object will not be allowed persistent storage.
+
+The object (all methods) will be granted the 'make_urbject' power.
+
+The 'install' command will emit one spid for each .py file.
+"""
+
 class SendOptions(BasedirParameterMixin, usage.Options):
     optFlags = [
         ("only", "o", "sendOnly: don't ask for return value"),
@@ -210,6 +228,7 @@ class Options(usage.Options):
         ("poke", None, PokeOptions, "Trigger event loop"),
         ("admin", None, AdminOptions, "admin commands"),
 
+        ("install", None, InstallOptions, "Install code in a local server"),
         ("send", None, SendOptions, "Send a message"),
 
         ("test", None, TestOptions, "Run unit tests with trial"),
@@ -247,6 +266,10 @@ def send(*args):
     from .send import send
     return send(*args)
 
+def install(*args):
+    from .install import install
+    return install(*args)
+
 def open_control_panel(*args):
     from .open import open_control_panel
     return open_control_panel(*args)
@@ -267,6 +290,7 @@ DISPATCH = {"create-node": create_node,
             "restart": restart,
             "gossip": gossip,
             "send": send,
+            "install": install,
             "open": open_control_panel,
             "admin": do_admin,
             "poke": poke,
