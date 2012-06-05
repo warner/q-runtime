@@ -14,6 +14,7 @@ class ServerBase:
         dbfile = os.path.join(self.basedir, "control.db")
         self.node = Node(self.basedir, dbfile)
         self.server = self.node.server
+        self.executor = self.node.server.executor
         self.db = self.server.db
         self.node.setServiceParent(self.s)
         self.s.startService()
@@ -30,6 +31,7 @@ class TwoServerBase:
         dbfile = os.path.join(self.basedir, "control.db")
         self.node = Node(self.basedir, dbfile)
         self.server = self.node.server
+        self.executor = self.node.server.executor
         self.db = self.server.db
         self.node.setServiceParent(self.s)
 
@@ -39,6 +41,7 @@ class TwoServerBase:
         dbfile2 = os.path.join(self.basedir2, "control.db")
         self.node2 = Node(self.basedir2, dbfile2)
         self.server2 = self.node2.server
+        self.executor2 = self.node2.server.executor
         self.db2 = self.server2.db
         self.node2.setServiceParent(self.s)
 

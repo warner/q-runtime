@@ -24,17 +24,17 @@ class MessageInput(resource.Resource):
         return resp
 
 class Poke(resource.Resource):
-    def __init__(self, server):
+    def __init__(self, executor):
         resource.Resource.__init__(self)
-        self._server = server
+        self._executor = executor
 
     def render_GET(self, request):
-        return self._server.poke("")
+        return self._executor.poke("")
 
     def render_POST(self, request):
         body = request.content.read()
         print "POKE", body
-        return self._server.poke(body)
+        return self._executor.poke(body)
 
 class Control(resource.Resource):
     def __init__(self, db):
@@ -100,7 +100,7 @@ class WebPort(service.MultiService):
         self.db.commit()
         mi = MessageInput(node.server)
         root.putChild("messages", mi)
-        root.putChild("poke", Poke(node.server))
+        root.putChild("poke", Poke(node.server.executor))
 
         site = server.Site(root)
         webport = str(node.get_node_config("webport"))

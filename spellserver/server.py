@@ -6,10 +6,9 @@ from twisted.web.client import getPage
 from twisted.python import log
 from nacl import crypto_box, crypto_box_open, \
      crypto_box_NONCEBYTES, crypto_box_PUBLICKEYBYTES
-from . import util, urbject
+from . import util
 from .eventual import eventually
-from .memory import create_memory
-
+from .executor import ExecutionServer
 
 
 # resending messages: we use Waterken's "retry-forever" style. Ideally, we'd
@@ -49,7 +48,8 @@ class Server(service.MultiService):
         self.inbound_triggered = False
         self.outbound_triggered = False
 
-        self._debug_processed_counter = 0
+        self.executor = ExecutionServer(self.db, self.vatid, self)
+        self.executor.setServiceParent(self)
 
     # nonce management: we need four virtual channels: one pair in each
     # direction. The Request channels deliver boxed request messages
@@ -154,8 +154,7 @@ class Server(service.MultiService):
         # repeatable) still allow us to retire the message. It's only system
         # failures (loss of power, node shutdown) that allow messages to be
         # tried again.
-        self.process_request(msg, vatid)
-        self._debug_processed_counter += 1
+        self.executor.process_request(msg, vatid)
 
         # if that completes, we can retire the message
         c.execute("DELETE FROM `inbound_messages`"
@@ -300,65 +299,3 @@ class Server(service.MultiService):
         assert len(pubkey) == crypto_box_PUBLICKEYBYTES
         assert len(nonce) == crypto_box_NONCEBYTES
         return (pubkey_s, pubkey, nonce, encbody)
-
-
-    # main request-execution handler
-
-    def process_request(self, msg, from_vatid):
-        # really, you should ignore from_vatid
-        log.msg("PROCESS %s" % (msg,))
-        command = str(msg["command"])
-        if command == "execute":
-            memid = str(msg["memid"])
-            powid = urbject.create_power_for_memid(self.db, memid)
-            t = urbject.Turn(self, self.db)
-            t.start_turn(msg["code"], powid, msg["args_json"], "{}", from_vatid)
-            return
-        if command == "invoke":
-            urbjid = str(msg["urbjid"])
-            u = urbject.Urbject(self, self.db, urbjid)
-            u.invoke(msg["args_json"], msg["args_clist_json"], from_vatid)
-            return
-        pass
-
-
-    # debug / CLI tools, triggered by 'poke'
-
-    def send_execute(self, vatid, memid, code, args):
-        msg = {"command": "execute",
-               "memid": memid,
-               "code": code,
-               "args_json": json.dumps(args),
-               "args_clist_json": json.dumps({})}
-        self.send_message(vatid, json.dumps(msg))
-
-    def send_invoke(self, vatid, urbjid, args):
-        msg = {"command": "invoke",
-               "urbjid": urbjid,
-               "args_json": json.dumps(args),
-               "args_clist_json": json.dumps({})}
-        self.send_message(vatid, json.dumps(msg))
-
-    def poke(self, body):
-        if body.startswith("send "):
-            cmd, vatid = body.strip().split()
-            self.send_message(vatid, json.dumps({"command": "hello"}))
-            return "message sent"
-        if body.startswith("create-memory"):
-            memid = create_memory(self.db)
-            return "created memory %s" % memid
-        if body.startswith("execute "):
-            cmd, vatid, memid = body.strip().split()
-            code = ("def call(args, power):\n"
-                    "    log('I have power!')\n")
-            args = {"foo": 12}
-            self.send_execute(vatid, memid, code, args)
-            return "execute sent"
-        if body.startswith("invoke "):
-            cmd, vatid, urbjid = body.strip().split()
-            args = {"foo": 12}
-            self.send_invoke(vatid, urbjid, args)
-            return "invoke sent"
-        self.trigger_inbound()
-        self.trigger_outbound()
-        return "I am poked"

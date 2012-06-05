@@ -58,7 +58,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
                "args_clist_json": json.dumps({}),
                }
 
-        self.server.process_request(msg, "from-vatid")
+        self.executor.process_request(msg, "from-vatid")
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
 
@@ -75,7 +75,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
                "args_clist_json": json.dumps(args_clist),
                }
 
-        self.server.process_request(msg, "from-vatid")
+        self.executor.process_request(msg, "from-vatid")
         m = Memory(self.db, memid)
         m_data, m_clist = m.get_data()
         fooid = m_clist[str(m_data["argfoo"]["clid"])]
@@ -94,7 +94,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         msg_json = json.dumps(msg)
         self.server.send_message(self.server.vatid, msg_json) # to yourself
         # now wait for the first node to process it
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
             self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
@@ -122,8 +122,8 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
                "args_clist_json": json.dumps(args_clist),
                }
 
-        self.server.process_request(msg, "from-vatid")
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        self.executor.process_request(msg, "from-vatid")
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 2)
         def _then(ign):
             m = Memory(self.db, memid_1)
             m_data, m_clist = m.get_data()
@@ -143,8 +143,8 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
                "args_clist_json": json.dumps({}),
                }
 
-        self.server.process_request(msg, "from-vatid")
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        self.executor.process_request(msg, "from-vatid")
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 2)
         def _then(ign):
             m = Memory(self.db, memid)
             m_data, m_clist = m.get_data()
@@ -167,7 +167,7 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
         msg_json = json.dumps(msg)
         self.server2.send_message(self.server.vatid, msg_json)
         # now wait for the first node to process it
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
             self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
@@ -180,7 +180,7 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
                    }
             msg_json = json.dumps(msg)
             self.server2.send_message(self.server.vatid, msg_json)
-            return self.poll(lambda: self.server._debug_processed_counter >= 2)
+            return self.poll(lambda: self.executor._debug_processed_counter >= 2)
         d.addCallback(_then)
         def _then2(ign):
             m = Memory(self.db, memid)
@@ -215,8 +215,8 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
         # wait for both nodes to process the messages. server1 receives the
         # F4 invocation, then server2 receives the F4b invocation, then
         # server1 receives the final F4a invocation
-        d = self.poll(lambda: self.server._debug_processed_counter >= 2
-                      and self.server2._debug_processed_counter >= 1)
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 2
+                      and self.executor2._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
             self.failUnlessEqual(m.get_static_data()["results"], 34)
@@ -225,20 +225,20 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
 
 class Poke(TwoServerBase, PollMixin, unittest.TestCase):
     def test_poke(self):
-        self.server.poke("poke")
+        self.executor.poke("poke")
         # that doesn't actually do anything
 
     def test_create_memory(self):
-        msg = self.server.poke("create-memory")
+        msg = self.executor.poke("create-memory")
         self.failUnless(msg.startswith("created memory "), msg)
         memid = msg.split()[2]
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_static_data(), {})
 
     def test_send(self):
-        self.server2.poke("send %s" % self.server.vatid)
+        self.executor2.poke("send %s" % self.server.vatid)
         # now wait for the first node to process it
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             # the message sent by 'poke send' is ignored
             return
@@ -248,9 +248,9 @@ class Poke(TwoServerBase, PollMixin, unittest.TestCase):
     def test_execute(self):
         memid = create_memory(self.db)
 
-        self.server2.poke("execute %s %s" % (self.server.vatid, memid))
+        self.executor2.poke("execute %s %s" % (self.server.vatid, memid))
         # now wait for the first node to process it
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             # the dummy code run by 'poke execute' doesn't do anything
             return
@@ -262,9 +262,9 @@ class Poke(TwoServerBase, PollMixin, unittest.TestCase):
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F1)
 
-        self.server2.poke("invoke %s %s" % (self.server.vatid, urbjid))
+        self.executor2.poke("invoke %s %s" % (self.server.vatid, urbjid))
         # now wait for the first node to process it
-        d = self.poll(lambda: self.server._debug_processed_counter >= 1)
+        d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
             self.failUnlessEqual(m.get_static_data()["argfoo"], 12)
