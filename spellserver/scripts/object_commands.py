@@ -1,6 +1,6 @@
 
 import os, json
-from .. import memory, urbject, database
+from .. import memory, urbject, database, util
 
 def get_db(so, err, basedir=None):
     if basedir is None:
@@ -68,10 +68,14 @@ def create_urbject(so, out, err):
     db = get_db(so, err)
     if not db:
         return 1
+    c = db.cursor()
+    c.execute("SELECT `pubkey` FROM `node`")
+    (vatid,) = c.fetchone()
     powid = urbject.create_power_for_memid(db, so["memid"])
     code = open(so["code-file"], "rb").read().decode("utf-8")
     urbjid = urbject.create_urbject(db, powid, code)
-    print >>out, "new urbject ID: %s" % urbjid
+    spid = util.make_spid(vatid, urbjid)
+    print >>out, "new spid: %s" % spid
     return 0
 
 def list_urbjects(so, out, err):
@@ -79,11 +83,14 @@ def list_urbjects(so, out, err):
     if not db:
         return 1
     c = db.cursor()
+    c.execute("SELECT `pubkey` FROM `node`")
+    (vatid,) = c.fetchone()
     c.execute("SELECT `urbjid`,`powid`, `code` FROM `urbjects`")
     objs = c.fetchall()
-    print >>out, "urbjid: code-size / power-id"
+    print >>out, "urbjid: code-size"
     for (urbjid, powid, code) in sorted(objs):
-        print >>out, "%s: %d / %s" % (urbjid, len(code), powid)
+        spid = util.make_spid(vatid, urbjid)
+        print >>out, "%s: %d" % (spid, len(code))
     print >>out, "%d objects total" % len(objs)
     return 0
 
@@ -92,6 +99,10 @@ def dump_urbject(so, out, err):
     if not db:
         return 1
     urbjid = so["urbjid"]
+    if urbjid.startswith("spid0-"):
+        vatid, urbjid = util.parse_spid(urbjid)
+    print >>out, "vat:", vatid
+    print >>out, "urbj:", urbjid
     c = db.cursor()
     c.execute("SELECT `powid`, `code` FROM `urbjects`"
               " WHERE `urbjid`=?", (urbjid,))
@@ -100,11 +111,12 @@ def dump_urbject(so, out, err):
         print >>out, "urbjid not found"
         return 0
     powid, code = mems[0]
-    print >>out, "CODE:"
-    print >>out, code.strip()
+    print >>out, "power:", powid
     c.execute("SELECT `power_json`, `power_clist_json` FROM `power`"
               " WHERE `powid`=?", (powid,))
     power_json, clist_json = c.fetchone()
     print >>out, "POWER:", power_json.strip()
     print >>out, "CLIST:", clist_json.strip()
+    print >>out, "CODE:"
+    print >>out, code.strip()
     return 0

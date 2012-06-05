@@ -75,8 +75,12 @@ class SendOptions(BasedirParameterMixin, usage.Options):
     optFlags = [
         ("only", "o", "sendOnly: don't ask for return value"),
         ]
-    def parseArgs(self, spid):
+    def parseArgs(self, basedir, spid, args="{}"):
+        BasedirArgument.parseArgs(self, basedir)
         self["spid"] = spid
+        self["args"] = args
+    def getSynopsis(self):
+        return "Usage: ssp admin send SPID [ARGS-JSON]"
 
 class CreateMemoryOptions(BasedirParameterMixin, BasedirArgument,
                           usage.Options):

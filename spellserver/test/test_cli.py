@@ -39,11 +39,10 @@ class CLI(ServerBase, unittest.TestCase):
         f.write(CODE)
         f.close()
         out = run("create-urbject", b, codefile)
-        self.failUnless(out.startswith("new urbject ID: "), out)
-        urbjid = out.split()[3]
-        self.failUnless(urbjid.startswith("urb0-"), urbjid)
+        self.failUnless(out.startswith("new spid: "), out)
+        spid = out.split()[2]
         lines = run("list-urbjects", b).splitlines()
-        self.failUnlessEqual(lines[0], "urbjid: code-size / power-id")
-        self.failUnless(lines[1].startswith("%s: 51 / " % urbjid), lines[1])
+        self.failUnlessEqual(lines[0], "urbjid: code-size")
+        self.failUnlessEqual(lines[1], "%s: 51" % spid)
         self.failUnlessEqual(lines[-1], "1 objects total")
 
