@@ -7,6 +7,6 @@ create:
 	./bin/ssp gossip c1 c2
 
 destroy:
-	./bin/ssp stop c1
-	./bin/ssp stop c2
+	-./bin/ssp stop c1
+	-./bin/ssp stop c2
 	rm -rf c1 c2
