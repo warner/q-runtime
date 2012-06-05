@@ -78,8 +78,21 @@ class CreateMemoryOptions(BasedirParameterMixin, BasedirArgument,
         ("memory-file", "m", None, "file (JSON) with initial memory contents"),
         ]
 
+    def getSynopsis(self):
+        return "Usage: ssp admin create-memory BASEDIR"
+
 class ListMemoryOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
-    pass
+    def getSynopsis(self):
+        return "Usage: ssp admin list-memory BASEDIR"
+
+class DumpMemoryOptions(BasedirParameterMixin, BasedirArgument,
+                          usage.Options):
+    def parseArgs(self, basedir, memid):
+        BasedirArgument.parseArgs(self, basedir)
+        self["memid"] = memid
+
+    def getSynopsis(self):
+        return "Usage: ssp admin dump-memory BASEDIR MEMID"
 
 class CreateUrbjectOptions(BasedirParameterMixin, BasedirArgument,
                            usage.Options):
@@ -103,15 +116,30 @@ class CreateUrbjectOptions(BasedirParameterMixin, BasedirArgument,
                                                     sys.stderr)
         self["code-file"] = codefile
 
+    def getSynopsis(self):
+        return "Usage: ssp admin create-urbject BASEDIR CODEFILE.py"
+
 class ListUrbjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
-    pass
+    def getSynopsis(self):
+        return "Usage: ssp admin list-urbjects BASEDIR"
+
+class DumpUrbjectOptions(BasedirParameterMixin, BasedirArgument,
+                          usage.Options):
+    def parseArgs(self, basedir, urbjid):
+        BasedirArgument.parseArgs(self, basedir)
+        self["urbjid"] = urbjid
+
+    def getSynopsis(self):
+        return "Usage: ssp admin dump-memory BASEDIR MEMID"
 
 class AdminOptions(usage.Options):
     subCommands = [
         ("create-memory", None, CreateMemoryOptions, "Make a memory slot"),
         ("list-memory", None, ListMemoryOptions, "List all memory slots"),
+        ("dump-memory", None, DumpMemoryOptions, "Display a memory slot"),
         ("create-urbject", None, CreateUrbjectOptions, "Make an Urbject"),
         ("list-urbjects", None, ListUrbjectOptions, "List all urbjects"),
+        ("dump-urbject", None, DumpUrbjectOptions, "Display an Urbject"),
         ]
     def postOptions(self):
         if not hasattr(self, 'subOptions'):
@@ -125,6 +153,10 @@ def list_memory(*args):
     from .object_commands import list_memory
     return list_memory(*args)
 
+def dump_memory(*args):
+    from .object_commands import dump_memory
+    return dump_memory(*args)
+
 def create_urbject(*args):
     from .object_commands import create_urbject
     return create_urbject(*args)
@@ -133,11 +165,17 @@ def list_urbjects(*args):
     from .object_commands import list_urbjects
     return list_urbjects(*args)
 
+def dump_urbject(*args):
+    from .object_commands import dump_urbject
+    return dump_urbject(*args)
+
 adminDispatch = {
     "create-memory": create_memory,
     "list-memory": list_memory,
+    "dump-memory": dump_memory,
     "create-urbject": create_urbject,
     "list-urbjects": list_urbjects,
+    "dump-urbject": dump_urbject,
     }
 
 def do_admin(options, stdout, stderr):
