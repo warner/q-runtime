@@ -39,6 +39,13 @@ def create_power_for_memid(db, memid=None, grant_make_urbject=False):
     db.commit()
     return powid
 
+def inner_add(a, b):
+    c = copy.copy(a) # shallow. We want p=add(power, stuff) to retain the
+                     # object identity of "p.memory is power.memory"
+    for key in b:
+        c[key] = b[key]
+    return c
+
 # the inner (sandboxed) code gets a power= argument which contains static
 # data, Memory-backed dicts (which behave just like static data but can be
 # detected and serialized when creating a new object), and InnerReference
@@ -56,13 +63,6 @@ def create_power_for_memid(db, memid=None, grant_make_urbject=False):
 # when serializing (packing) a power= argument from the inner code, we do
 # JSON serialization, but catch memory-backed dicts by comparing object
 # identities with our table, and catch InnerReferences with isinstance().
-
-def inner_add(a, b):
-    c = copy.copy(a) # shallow. We want p=add(power, stuff) to retain the
-                     # object identity of "p.memory is power.memory"
-    for key in b:
-        c[key] = b[key]
-    return c
 
 
 
