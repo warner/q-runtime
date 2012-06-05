@@ -165,7 +165,7 @@ class Turn:
         rc = Invocation(self, code, powid)._execute(args, self._vatid)
         return rc
 
-    def outbound_message(self, inner_ref, args):
+    def sendOnly(self, inner_ref, args):
         packed_args = pack_args(self, args)
         # local-only for now
         target_vatid, target_urbjid = self.swissnums[inner_ref]

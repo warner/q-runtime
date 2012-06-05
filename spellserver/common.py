@@ -8,8 +8,8 @@ class CList(dict):
 class InnerReference:
     def __init__(self, turn):
         self._turn = turn
-    def send(self, args):
-        return self._turn.outbound_message(self, args)
+    def sendOnly(self, args):
+        return self._turn.sendOnly(self, args)
     def call(self, args):
         return self._turn.local_sync_call(self, args)
 

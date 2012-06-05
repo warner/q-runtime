@@ -14,7 +14,7 @@ def call(args, power):
 
 F2 = """
 def call(args, power):
-    args['ref'].send({'foo': 34})
+    args['ref'].sendOnly({'foo': 34})
 """
 
 F3 = """
@@ -25,7 +25,7 @@ def call(args, power):
 
 def call(args, power):
     u2 = power['make_urbject'](F3a, power)
-    u2.send({'foo': 56})
+    u2.sendOnly({'foo': 56})
 """
 
 F4 = """
@@ -36,12 +36,12 @@ def call(args, power):
 
 def call(args, power):
     u2 = power['make_urbject'](F4a, power)
-    args['remote'].send({'callback': u2})
+    args['remote'].sendOnly({'callback': u2})
 """
 
 F4b = """
 def call(args, power):
-    args['callback'].send({'response': 34})
+    args['callback'].sendOnly({'response': 34})
 """
 
 
@@ -101,7 +101,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         d.addCallback(_then)
         return d
 
-    def test_send_from_sandbox(self):
+    def test_sendonly_from_sandbox(self):
         memid_1 = create_memory(self.db)
         powid_1 = create_power_for_memid(self.db, memid_1)
         urbjid_1 = create_urbject(self.db, powid_1, F1)
@@ -131,7 +131,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         d.addCallback(_then)
         return d
 
-    def test_make_and_send(self):
+    def test_make_and_sendonly(self):
         memid = create_memory(self.db)
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F3)
