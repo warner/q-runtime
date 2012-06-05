@@ -2,7 +2,8 @@
 import json
 from twisted.application import service
 from twisted.python import log
-from . import urbject
+from .urbject import create_power_for_memid, Urbject
+from .turn import Turn
 from .memory import create_memory
 
 class ExecutionServer(service.Service):
@@ -27,14 +28,17 @@ class ExecutionServer(service.Service):
         command = str(msg["command"])
         if command == "execute":
             memid = str(msg["memid"])
-            powid = urbject.create_power_for_memid(self.db, memid)
-            t = urbject.Turn(self, self.db)
+            powid = create_power_for_memid(self.db, memid)
+            t = Turn(self, self.db)
             t.start_turn(msg["code"], powid, msg["args_json"], "{}", from_vatid)
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])
-            u = urbject.Urbject(self, self.db, urbjid)
-            u.invoke(msg["args_json"], msg["args_clist_json"], from_vatid)
+            u = Urbject(self, self.db, urbjid)
+            code, powid = u.get_code_and_powid()
+            t = Turn(self, self.db)
+            t.start_turn(code, powid, msg["args_json"], msg["args_clist_json"],
+                         from_vatid)
             return
         #raise ValueError("unknown command '%s'" % command)
         log.msg("ignored command '%s'" % command)
