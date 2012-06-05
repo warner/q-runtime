@@ -55,3 +55,13 @@ def from_ascii(s_ascii, prefix="", encoding="base64"):
 
 def makeid(prefix="", length=16):
     return to_ascii(os.urandom(length), prefix, encoding="base32")
+
+def make_spid(vatid, urbjid):
+    v = remove_prefix(vatid, "pk0-")
+    u = remove_prefix(urbjid, "urb0-")
+    return "spid0-%s-%s" % (v, u)
+
+def parse_spid(spid):
+    assert spid.startswith("spid0-")
+    pieces = spid.split("-")
+    return "pk0-"+pieces[1], "urb0-"+pieces[2]

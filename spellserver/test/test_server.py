@@ -3,6 +3,7 @@ import json
 from twisted.trial import unittest
 from .common import ServerBase, TwoServerBase
 from .pollmixin import PollMixin
+from ..util import make_spid
 from ..memory import create_memory, Memory
 from ..urbject import create_urbject, create_power_for_memid
 
@@ -236,12 +237,21 @@ class Poke(TwoServerBase, PollMixin, unittest.TestCase):
         self.failUnlessEqual(m.get_static_data(), {})
 
     def test_send(self):
-        self.executor2.poke("send %s" % self.server.vatid)
+        memid = create_memory(self.db)
+        powid = create_power_for_memid(self.db, memid)
+        urbjid = create_urbject(self.db, powid, F1)
+        spid = make_spid(self.server.vatid, urbjid)
+        self.failUnless(spid.startswith("spid0-"), spid)
+        args = json.dumps({"foo": "bar"})
+        message = "send "+json.dumps({"spid": spid,
+                                      "args": args,
+                                      })
+        self.executor2.poke(message)
         # now wait for the first node to process it
         d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
-            # the message sent by 'poke send' is ignored
-            return
+            m = Memory(self.db, memid)
+            self.failUnlessEqual(m.get_static_data(), {"argfoo": "bar"})
         d.addCallback(_then)
         return d
 

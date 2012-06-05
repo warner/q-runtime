@@ -5,6 +5,7 @@ from twisted.python import log
 from .urbject import create_power_for_memid, Urbject
 from .turn import Turn
 from .memory import create_memory
+from . import util
 
 class ExecutionServer(service.Service):
     def __init__(self, db, vatid, comms):
@@ -65,9 +66,13 @@ class ExecutionServer(service.Service):
 
     def poke(self, body):
         if body.startswith("send "):
-            cmd, vatid = body.strip().split()
-            cmd_s = json.dumps({"command": "hello"})
-            self._comms_server.send_message(vatid, cmd_s)
+            send_msg = json.loads(body[len("send "):])
+            vatid, urbjid = util.parse_spid(send_msg["spid"])
+            msg = {"command": "invoke",
+                   "urbjid": urbjid,
+                   "args_json": send_msg["args"],
+                   "args_clist_json": json.dumps({})}
+            self._comms_server.send_message(vatid, json.dumps(msg))
             return "message sent"
         if body.startswith("create-memory"):
             memid = create_memory(self.db)

@@ -71,6 +71,12 @@ class TestOptions(usage.Options):
             test_args = ["spellserver"]
         self.test_args = test_args
 
+class SendOptions(BasedirParameterMixin, usage.Options):
+    optFlags = [
+        ("only", "o", "sendOnly: don't ask for return value"),
+        ]
+    def parseArgs(self, spid):
+        self["spid"] = spid
 
 class CreateMemoryOptions(BasedirParameterMixin, BasedirArgument,
                           usage.Options):
@@ -196,6 +202,8 @@ class Options(usage.Options):
         ("poke", None, PokeOptions, "Trigger event loop"),
         ("admin", None, AdminOptions, "admin commands"),
 
+        ("send", None, SendOptions, "Send a message"),
+
         ("test", None, TestOptions, "Run unit tests with trial"),
         ]
 
@@ -227,6 +235,10 @@ def gossip(*args):
     from .gossip import gossip
     return gossip(*args)
 
+def send(*args):
+    from .send import send
+    return send(*args)
+
 def open_control_panel(*args):
     from .open import open_control_panel
     return open_control_panel(*args)
@@ -246,6 +258,7 @@ DISPATCH = {"create-node": create_node,
             "stop": stop,
             "restart": restart,
             "gossip": gossip,
+            "send": send,
             "open": open_control_panel,
             "admin": do_admin,
             "poke": poke,
