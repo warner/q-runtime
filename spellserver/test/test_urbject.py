@@ -2,9 +2,9 @@
 import json
 from twisted.trial import unittest
 from .common import ServerBase
+from ..pack import PackedPower
 from ..memory import create_memory, Memory
-from ..urbject import create_urbject, create_power_for_memid, \
-     Turn, Urbject, PackedPower
+from ..urbject import create_urbject, create_power_for_memid, Turn, Urbject
 
 F1 = """
 def call(args, power):

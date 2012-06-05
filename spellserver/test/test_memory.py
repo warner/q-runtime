@@ -3,7 +3,7 @@ import json
 from twisted.trial import unittest
 from .common import ServerBase
 from ..memory import create_memory, Memory
-from ..urbject import PackedPower
+from ..pack import PackedPower
 
 class Test(ServerBase, unittest.TestCase):
 
