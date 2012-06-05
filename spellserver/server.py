@@ -68,6 +68,7 @@ class Server(service.MultiService):
     def inbound_message(self, body):
         their_vatid, their_pubkey, nonce, encbody = self.parse_message(body)
         # their_vatid is "pk0-base32..", while their_pubkey is binary
+        assert their_vatid != self.vatid, "go away mirror"
         nonce_number = int(hexlify(nonce), 16)
         if their_vatid < self.vatid:
             offset = 2 # they are First, I am Second, msg is First->Second
