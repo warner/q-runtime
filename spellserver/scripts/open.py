@@ -2,7 +2,7 @@
 import os
 import webbrowser
 from . import webwait
-from .. import database, nonce
+from .. import database, util
 
 def open_control_panel(so, out, err):
     basedir = os.path.abspath(so["basedir"])
@@ -19,7 +19,7 @@ def open_control_panel(so, out, err):
     if "relay" in services:
         url = baseurl+"relay"
     else:
-        n = nonce.make_nonce()
+        n = util.makeid()
         c.execute("INSERT INTO webui_initial_nonces VALUES (?)", (n,))
         db.commit()
         url = baseurl+"control?nonce=%s" % n

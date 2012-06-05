@@ -1,5 +1,5 @@
 
-import os, json
+import json
 from . import util
 
 def create_memory(db, contents={}, clist={}):
@@ -7,7 +7,7 @@ def create_memory(db, contents={}, clist={}):
     return create_raw_memory(db, json.dumps(contents), json.dumps(clist))
 
 def create_raw_memory(db, contents_json, clist_json):
-    memid = util.to_ascii(os.urandom(32), "mem0-", encoding="base32")
+    memid = util.makeid("mem0-")
     c = db.cursor()
     c.execute("INSERT INTO `memory` VALUES (?,?,?)",
               (memid, contents_json, clist_json))

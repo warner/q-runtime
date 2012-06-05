@@ -2,7 +2,7 @@ import os
 from twisted.application import service, strports
 from twisted.web import server, static, resource
 from twisted.python import log
-from .nonce import make_nonce
+from .util import makeid
 
 MEDIA_DIRNAME = os.path.join(os.path.dirname(__file__), "media")
 
@@ -61,7 +61,7 @@ class Control(resource.Resource):
         c.execute("DELETE FROM webui_initial_nonces WHERE nonce=?", (nonce,))
         # this token lasts as long as the node is running: it is cleared at
         # startup
-        token = make_nonce()
+        token = makeid()
         c.execute("INSERT INTO `webui_access_tokens` VALUES (?)", (token,))
         self.db.commit()
         request.setHeader("content-type", "text/html")

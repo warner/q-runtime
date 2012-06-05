@@ -1,5 +1,6 @@
 
-import os, json
+import json
+from .util import makeid
 from .common import CList, InnerReference, NativePower
 
 class PackedPower:
@@ -44,7 +45,7 @@ class _Packing:
         # prohibit "__power__" as a property name. This prevents inner code
         # from turning swissnums into references by submitting tricky data
         # for serialization.
-        self._nonce = "__power_%s__" % os.urandom(32).encode("hex")
+        self._nonce = "__power_%s__" % makeid()
         self._enc = _PowerEncoder()
         self._enc._power_packing = self
 

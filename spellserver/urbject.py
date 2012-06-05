@@ -1,17 +1,17 @@
 
-import os, json
+import json
 from . import util
 from .common import CList
 
 def create_urbject(db, powid, code):
-    urbjid = util.to_ascii(os.urandom(32), "urb0-", encoding="base32")
+    urbjid = util.makeid("urb0-")
     c = db.cursor()
     c.execute("INSERT INTO `urbjects` VALUES (?,?,?)", (urbjid, powid, code))
     db.commit()
     return urbjid
 
 def create_power(db, packed_power):
-    powid = util.to_ascii(os.urandom(32), "pow0-", encoding="base32")
+    powid = util.makeid("pow0-")
     c = db.cursor()
     c.execute("INSERT INTO `power` VALUES (?,?,?)",
               (powid, packed_power.power_json,
@@ -20,7 +20,7 @@ def create_power(db, packed_power):
     return powid
 
 def create_power_for_memid(db, memid=None, grant_make_urbject=False):
-    powid = util.to_ascii(os.urandom(32), "pow0-", encoding="base32")
+    powid = util.makeid("pow0-")
     power = {}
     power_clist = CList()
     if memid:

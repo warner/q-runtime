@@ -53,5 +53,5 @@ def from_ascii(s_ascii, prefix="", encoding="base64"):
         raise NotImplementedError
     return s_bytes
 
-def makeid(prefix=""):
-    return to_ascii(os.urandom(32), prefix, encoding="base32")
+def makeid(prefix="", length=16):
+    return to_ascii(os.urandom(length), prefix, encoding="base32")
