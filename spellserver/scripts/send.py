@@ -14,4 +14,6 @@ def send(so, out, err):
                                   "args": so["args"],
                                   })
     r = urllib.urlopen(baseurl+"poke", message)
-    print r.read()
+    print >>out, r.read()
+    return 0
+

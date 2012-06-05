@@ -33,7 +33,6 @@ class Poke(resource.Resource):
 
     def render_POST(self, request):
         body = request.content.read()
-        print "POKE", body
         return self._executor.poke(body)
 
 class Control(resource.Resource):

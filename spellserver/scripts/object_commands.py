@@ -17,6 +17,13 @@ def create_memory_from_file(basedir, memory_file, err):
     if not db:
         return 1
     data = open(memory_file, "rb").read().decode("utf-8")
+    memid = memory.create_raw_memory(db, data, "{}")
+    return memid
+
+def create_memory_from_data(basedir, data, err):
+    db = get_db(None, err, basedir)
+    if not db:
+        return 1
     memid = memory.create_raw_memory(db, json.dumps(data), "{}")
     return memid
 

@@ -75,8 +75,7 @@ class SendOptions(BasedirParameterMixin, usage.Options):
     optFlags = [
         ("only", "o", "sendOnly: don't ask for return value"),
         ]
-    def parseArgs(self, basedir, spid, args="{}"):
-        BasedirArgument.parseArgs(self, basedir)
+    def parseArgs(self, spid, args="{}"):
         self["spid"] = spid
         self["args"] = args
     def getSynopsis(self):
@@ -123,6 +122,11 @@ class CreateUrbjectOptions(BasedirParameterMixin, BasedirArgument,
             # TODO: get stdout/stderr from options
             self["memid"] = create_memory_from_file(self["basedir"],
                                                     self["memory-file"],
+                                                    sys.stderr)
+        elif not self["memid"]:
+            from .object_commands import create_memory_from_data
+            # TODO: get stdout/stderr from options
+            self["memid"] = create_memory_from_data(self["basedir"], {},
                                                     sys.stderr)
         self["code-file"] = codefile
 
