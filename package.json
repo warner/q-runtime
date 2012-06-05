@@ -1,0 +1,11 @@
+{
+  "name": "spellserver",
+  "version": "0.0.1",
+  "lib": "js/lib",
+  "dependencies": {
+    "express": "2.5.9"
+  },
+  "scripts": {
+    "ssp": "./js/scripts/ssp.js"
+  }
+}
