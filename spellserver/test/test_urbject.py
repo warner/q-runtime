@@ -4,7 +4,7 @@ from twisted.trial import unittest
 from .common import ServerBase
 from ..memory import create_memory, Memory
 from ..urbject import create_urbject, create_power_for_memid, \
-     Urbject, Invocation, PackedPower
+     Turn, Urbject, PackedPower
 
 F1 = """
 def call(args, power):
@@ -94,18 +94,21 @@ class Test(ServerBase, unittest.TestCase):
         u = Urbject(self.server, self.db, urbjid)
         del u
 
+    def _make_turn(self):
+        return Turn(self.server, self.db)
+
     def test_execute(self):
         msgs = []
         powid = create_power_for_memid(self.db)
-        i = Invocation(self.server, self.db, F1, powid)
-        i.invoke("{}", "{}", "from_vatid", debug=msgs.append)
+        t = self._make_turn()
+        t.start_turn(F1, powid, "{}", "{}", "from_vatid", debug=msgs.append)
         self.failUnlessEqual(msgs, ["I have power!"])
 
     def test_memory(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
-        i = Invocation(self.server, self.db, F2, powid)
-        i.invoke('{"delta": 1}', "{}", "from_vatid")
+        t = self._make_turn()
+        t.start_turn(F2, powid, '{"delta": 1}', "{}", "from_vatid")
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_static_data()["counter"], 1)
 
@@ -147,13 +150,13 @@ class Test(ServerBase, unittest.TestCase):
         urbjid = create_urbject(self.db, powid, F5)
         u = Urbject(self.server, self.db, urbjid)
         args = json.dumps({"foo": {"__power__": "reference", "clid": "1"}})
-        args_clist = json.dumps({"1": "foo-urbjid"})
+        args_clist = json.dumps({"1": ("vatid","foo-urbjid")})
         # TODO: replace foo-urbjid with something real (local or remote)
         u.invoke(args, args_clist, "from_vatid")
         m = Memory(self.db, memid)
         m_data, m_clist = m.get_data()
         fooid = m_clist[str(m_data["argfoo"]["clid"])]
-        self.failUnlessEqual(fooid, "foo-urbjid")
+        self.failUnlessEqual(fooid, [u"vatid",u"foo-urbjid"])
 
     def test_add(self):
         memid = create_memory(self.db, {"counter": 0})

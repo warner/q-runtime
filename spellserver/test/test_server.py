@@ -68,7 +68,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         urbjid = create_urbject(self.db, powid, F1)
 
         args = {"foo": {"__power__": "reference", "clid": "1"}}
-        args_clist = {"1": "foo-urbjid"}
+        args_clist = {"1": ("vatid","foo-urbjid")}
         msg = {"command": "invoke",
                "urbjid": urbjid,
                "args_json": json.dumps(args),
@@ -79,7 +79,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         m = Memory(self.db, memid)
         m_data, m_clist = m.get_data()
         fooid = m_clist[str(m_data["argfoo"]["clid"])]
-        self.failUnlessEqual(fooid, "foo-urbjid")
+        self.failUnlessEqual(fooid, [u"vatid",u"foo-urbjid"])
 
     def test_loopback(self):
         memid = create_memory(self.db)

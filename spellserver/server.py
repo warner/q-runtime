@@ -311,8 +311,8 @@ class Server(service.MultiService):
         if command == "execute":
             memid = str(msg["memid"])
             powid = urbject.create_power_for_memid(self.db, memid)
-            i = urbject.Invocation(self, self.db, msg["code"], powid)
-            i.invoke(msg["args_json"], "{}", from_vatid)
+            t = urbject.Turn(self, self.db)
+            t.start_turn(msg["code"], powid, msg["args_json"], "{}", from_vatid)
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])

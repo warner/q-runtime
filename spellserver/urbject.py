@@ -44,21 +44,21 @@ def create_power_for_memid(db, memid=None, grant_make_urbject=False):
 
 # the inner (sandboxed) code gets a power= argument which contains static
 # data, Memory-backed dicts (which behave just like static data but can be
-# detected and serialized), and InnerReference objects (which remember a
-# .clid and have an invoke() method).
+# detected and serialized when creating a new object), and InnerReference
+# objects (which have .send() and .call() methods).
 
 # This is created from a power_json/clist_json pair, in which power_json
 # represents Memory objects with {__power__:"memory",clid=clid}, and
 # InnerReference objects with {__power__:"reference",clid=clid}. clist_json
-# maps clid to memid or urbjid
+# maps clid to memid or (vatid,urbjid)
 
-# To track these, the outer code retains a clist that maps from clid to
-# urbjid (for InnerReferences), and a table that maps from the id() of the
-# Memory-backed dicts to (memid, Memory).
+# To track these, the outer code (Turn) retains a bunch of tables that map
+# from InnerReference to vatid/urbjid and back, and from the Memory-backed
+# dicts to (memid, Memory) and back.
 
 # when serializing (packing) a power= argument from the inner code, we do
-# JSON serialization, but catch memory-backed dicts by looking for their id
-# in the table, and catch InnerReferences with isinstance().
+# JSON serialization, but catch memory-backed dicts by comparing object
+# identities with our table, and catch InnerReferences with isinstance().
 
 class InnerReference:
     def __init__(self, turn):
@@ -89,41 +89,31 @@ class Turn:
         self._server = server
         self._vatid = server.vatid
         self.db = db
+        self.outbound_messages = []
 
-        self.ALL_NATIVE_POWERS = {"make_urbject": inner_make_urbject}
+        self.powid_to_power = {} # powid -> inner 'power' dict
+        self.power_to_powid = {} # id(inner-dict) -> (powid, inner-dict)
+        # retain inner-dict to keep it alive, so the id() isn't re-assigned
 
-        # self.swissnums maps from an object (NativePower or InnerReference)
-        # to swissnum, via a WeakKeyDictionary. This lets us avoid allocating
-        # clids just for OuterPower. There is one .swissnums shared for all
-        # stack frames of the turn.
-        if swissnums is None:
-            swissnums = weakref.WeakKeyDictionary()
-        self.swissnums = swissnums
+        self.KNOWN_NATIVE_POWERS = {"make_urbject": self.inner_make_urbject}
+        self.native_powers = {} # name -> NativePower object
 
-        self.native_powers = {} # name to NativePower object
+        # this makes sure that sub-invocations (via o.call) get the same data
+        # as the parent, and that their modifications are immediately visible
+        # to the parent
+        self.memories = {} # memid -> (Memory, data)
+        self.memory_data_to_memid = {} # id(data) -> memid
 
-        # self.memories maps from a memid to a (Memory, data) pair. This
-        # makes sure that sub-invocations (via o.call) get the same data as
-        # the parent, and that their modifications are immediately visible to
-        # the parent. There is one .memories shared for all stack frames of
-        # the turn.
-        if memories is None:
-            memories = {}
-        self.memories = memories
+        self.references = {} # refid=(vatid,urbjid) -> InnerReference
 
-    def outbound_message(self, inner_ref, args):
-        packed_args = Packing(self.db, self).pack_args(args)
-        # local-only for now
-        target_vatid, target_urbjid = self.swissnums[inner_ref]
-        msg = {"command": "invoke",
-               "urbjid": target_urbjid,
-               "args_json": packed_args.power_json,
-               "args_clist_json": packed_args.power_clist_json}
-        self._server.send_message(target_vatid, json.dumps(msg))
-        return None # no results-Promises yet
+        # this maps from an object (NativePower or InnerReference) to
+        # swissnum, so when we see one during serialization (of args, power,
+        # or a memory), we can look up the swissnum (which is otherwise
+        # hidden from the inner code)
+        self.swissnums = weakref.WeakKeyDictionary()
 
     def get_power(self, powid):
-        if powid not in self.powers:
+        if powid not in self.powid_to_power:
             c = self.db.cursor()
             c.execute("SELECT `power_json`,`power_clist_json` FROM `power`"
                       " WHERE `powid`=?", (powid,))
@@ -132,34 +122,34 @@ class Turn:
             (power_json, power_clist_json) = results[0]
             inner = unpack_power(self, power_json, power_clist_json)
             self.powid_to_power[powid] = inner
-            self.power_to_powid[inner] = powid
+            self.power_to_powid[id(inner)] = (powid, inner)
         return self.powid_to_power[powid]
 
     def inner_make_urbject(self, code, child_power):
-        """Create a make_urbject() function for the inner code."""
+        """Implement a make_urbject() function for the inner code."""
         # When called later, the packer will need to pull swissnums from the
         # Turn, and compare both .power and .memory to see if we're sharing
-        # power or memory with the child
-        if child_power in self.power_to_powid:
+        # power or memory with the child. So we need to stash them
+        if id(child_power) in self.power_to_powid:
             # reuse the existing powid instead of creating a new one
-            powid = self.power_to_powid[child_power]
+            (powid,_) = self.power_to_powid[id(child_power)]
         else:
-            p = Packing(self.db, self)
-            packed_power = p.pack_power(child_power)
+            packed_power = pack_power(self, child_power)
             powid = create_power(self.db, packed_power)
         urbjid = create_urbject(self.db, powid, code)
         # this will update Invocation.swissnums, so it will have the
         # ability to serialize the newly created object at the end of the
         # turn
-        ir = InnerReference(self.turn)
-        self.turn.add_local_urbject(ir, urbjid)
+        ir = InnerReference(self)
+        assert self._vatid
+        self.swissnums[ir] = (self._vatid, urbjid)
         return ir
 
     def get_native_power(self, name):
         if name not in self.native_powers:
-            if name not in self.ALL_NATIVE_POWERS:
+            if name not in self.KNOWN_NATIVE_POWERS:
                 raise ValueError("unknown native power %s" % (name,))
-            f = self.ALL_NATIVE_POWERS[name]
+            f = self.KNOWN_NATIVE_POWERS[name]
             o = NativePower(f)
             self.native_powers[name] = o
             self.swissnums[o] = name
@@ -173,31 +163,54 @@ class Turn:
             # invocation gets power from Memory as well as args
             memory_json, memory_clist_json = memory.get_raw_data()
             data = unpack_memory(self, memory_json, memory_clist_json)
+            self.memory_data_to_memid[id(data)] = memid
             self.memories[memid] = (memory, data)
         (memory, data) = self.memories[memid]
         return data
 
     def get_reference(self, refid):
+        # JSON returns lists, but we need refid to be hashable
+        assert isinstance(refid, tuple)
         if refid not in self.references:
             r = InnerReference(self)
             self.references[refid] = r
             self.swissnums[r] = refid
         return self.references[refid]
 
-    def add_local_urbject(self, inner_ref, urbjid):
-        assert self._vatid
-        self.swissnums[inner_ref] = (self._vatid, urbjid)
+    # serialization/packing
+    def put_memory(self, data):
+        if id(data) in self.memory_data_to_memid:
+            # we've seen this before, so this child will share the parent's
+            # Memory
+            memid = self.memory_data_to_memid[id(data)]
+        else:
+            # otherwise, we want to create a new Memory object, with 'data'
+            # as the initial contents
+            packed = pack_memory(self, data)
+            memid = create_raw_memory(self.db, packed.power_json,
+                                      packed.power_clist_json)
+            # note: we do *not* do "self.swissnums[data] = memid" here. We
+            # only re-use Memory objects that were passed into an inner
+            # function via its power.memory . Passing the same initial data
+            # to two separate make_urbject() calls does not give them shared
+            # memory. OTOH, we may want to revisit this, if there's a good
+            # way to express it (probably with an explicit make_memory()
+            # call).
+        return memid
 
-    def commit_turn(self):
-        for (memid, (memory, data)) in self.memories.items():
-            p = Packing(self.db, self)
-            memory.save(p.pack_memory(data))
+    def get_swissnum_for_object(self, obj):
+        return self.swissnums[obj]
 
+    # this is the real entry point. Inside start_turn(), we'll use the
+    # deserialization stuff above. The inner code may end up invoking
+    # local_sync_call (when it does o.call), or outbound_message (for
+    # o.send). When we're all done, we commit the turn.
 
     def start_turn(self, code, powid, args_json, args_clist_json, from_vatid,
                    debug=None):
         first_i = Invocation(self, code, powid)
-        rc = first_i.invoke(args_json, args_clist_json, from_vatid, debug)
+        rc = first_i._invoke(args_json, args_clist_json, from_vatid, debug)
+        self._commit_turn()
         return rc
 
     def local_sync_call(self, inner_ref, args):
@@ -208,20 +221,28 @@ class Turn:
         rc = Invocation(self, code, powid)._execute(args, self._vatid)
         return rc
 
+    def outbound_message(self, inner_ref, args):
+        packed_args = pack_args(self, args)
+        # local-only for now
+        target_vatid, target_urbjid = self.swissnums[inner_ref]
+        msg = {"command": "invoke",
+               "urbjid": target_urbjid,
+               "args_json": packed_args.power_json,
+               "args_clist_json": packed_args.power_clist_json}
+        # queue for delivery at the end of the turn
+        self.outbound_messages.append( (target_vatid, json.dumps(msg)) )
+        return None # no results-Promises yet
+
+    def _commit_turn(self):
+        for (memid, (memory, data)) in self.memories.items():
+            memory.save(pack_memory(self, data))
+        for (target_vatid, msg) in self.outbound_messages:
+            self._server.send_message(target_vatid, msg)
+
 class Invocation:
     def __init__(self, turn, code, powid):
         self.code = code
         self.turn = turn
-
-        # self.memory holds the Memory object used for this one stack frame
-        # (invocation of a specific urbjid) whose contents populates
-        # power.memory, and self.memory_data holds the actual power.memory
-        # dictionary itself (used for object comparison in make_urbject() to
-        # tell if the power.memory being handed to the child is the same as
-        # our own, and thus should be shared). Both can be None if this child
-        # was not given any memory
-        self.memory = XXX
-        self.memory_data = XXX
 
         # self.inner_power holds the 'power' dictionary for the same frame,
         # passed to sandboxed code as power=
@@ -255,73 +276,51 @@ class PackedPower:
         # the power= object's clids to actual swissnums (memids and urbjids)
         self.power_clist_json = power_clist_json
 
-class PowerEncoder(json.JSONEncoder):
+class _PowerEncoder(json.JSONEncoder):
     def default(self, obj):
-        if isinstance(obj, NativePower) and self._power_allow_native:
-            name = self._power_old_swissnums[obj]
-            new_clid = self._power_new_clist.add(name)
-            return {"__power__": "native", "clid": new_clid}
+        if isinstance(obj, NativePower) and self._power_packing._allow_native:
+            p = self._power_packing
+            name = p._turn.get_swissnum_for_object(obj)
+            new_clid = p._clist.add(name)
+            return {p._nonce: "native", "clid": new_clid}
         if isinstance(obj, InnerReference):
-            refid = self._power_old_swissnums[obj]
-            new_clid = self._power_new_clist.add(refid)
-            return {"__power__": "reference", "clid": new_clid}
+            p = self._power_packing
+            refid = p._turn.get_swissnum_for_object(obj)
+            new_clid = p._clist.add(refid)
+            return {p._nonce: "reference", "clid": new_clid}
         return json.JSONEncoder.default(self, obj)
+    def _iterencode_dict(self, dct, markers=None):
+        # prevent dicts with keys named "__power__". The nonce-based defense
+        # we have here is driven by Javascript's JSON.stringify which makes
+        # it easy to prohibit specific key names. In python, we could do this
+        # by overriding _iterencode_dict. There's not a lot of point, though,
+        # since python code is unconfined anyways (they could just
+        # monkeypatch us to remove this check, etc).
+        if "__power__" in dct:
+            raise ValueError("forbidden __power__ in serializing data")
+        return json.JSONEncoder._iterencode_dict(self, dct, markers)
 
-class Packing:
-    def __init__(self, db, invocation):
-        self.db = db
-        self.invocation = invocation
-        self.clist = CList()
-        self._used = False
-
-    # choose exactly one of these three entry points
-    def pack_power(self, child_power):
-        # used for make_object(code, power). Can serialize static, References,
-        # NativePowers, and one memory.
-        assert not self._used
-        self._used = True
-        return self._pack(child_power, True, True)
-
-    def pack_memory(self, inner_memory):
-        # Can serialize static, References, NativePowers, but not Memory.
-        assert not self._used
-        self._used = True
-        return self._pack(inner_memory, True, False)
-
-    def pack_args(self, child_args):
-        # Can serialize static and References, but not NativePowers or Memory
-        assert not self._used
-        self._used = True
-        return self._pack(child_args, False, False)
-
-    def _pack_memory(self, inner_memory):
-        # This lets pack_power() one-time-recursively pack power.memory and
-        # have both _power and _memory add to the same clist
-        assert self._used
-        return self._pack(inner_memory, True, False)
+class _Packing:
+    def __init__(self, turn, allow_native, allow_memory):
+        self._turn = turn
+        self._allow_native = allow_native
+        self._allow_memory = allow_memory
+        self._clist = CList()
+        # we translate _nonce into "__power__" when we're done, and otherwise
+        # prohibit "__power__" as a property name. This prevents inner code
+        # from turning swissnums into references by submitting tricky data
+        # for serialization.
+        self._nonce = "__power_%s__" % os.urandom(32).encode("hex")
+        self._enc = _PowerEncoder()
+        self._enc._power_packing = self
 
     def _build_fake_memory(self, old_memory):
-        # XXX this will need to insert different objects in our copy, because
-        # the confined code must be prohibited from inserting these same
-        # objects to violate confinement (our encoder needs to reject
-        # '__power__' properties from the inner code). The use of 'clid'
-        # prevents them from gaining any new powers, but in the future we'll
-        # probably change this to use swissnums directly, at which point
-        # it'll become pretty important.
-        if old_memory is self.outer_power.memory_data:
-            # the child will share the parent's Memory
-            new_clid = self.clist.add(self.outer_power.memory.memid)
-            return {"__power__": "memory", "clid": new_clid}
+        memid = self._turn.put_memory(old_memory)
+        new_clid = self._clist.add(memid)
+        return {self._nonce: "memory", "clid": new_clid}
 
-        # the child gets a new Memory with some initial contents
-        packed = self._pack_memory(old_memory)
-        memid = create_raw_memory(self.db, packed.power_json,
-                                  packed.power_clist_json)
-        new_clid = self.clist.add(memid)
-        return  {"__power__": "memory", "clid": new_clid}
-
-    def _pack(self, child_power, allow_native, allow_memory):
-        if allow_memory:
+    def _pack(self, child_power):
+        if self._allow_memory:
             # we handle a top-level Memory object by pretending that the
             # original data contains a {__power__:memory} dict. We must
             # modify a copy, not the original.
@@ -334,13 +333,26 @@ class Packing:
                 else:
                     child_power[k] = old_child_power[k]
 
-        enc = PowerEncoder()
-        enc._power_allow_native = allow_native
-        enc._power_old_swissnums = self.invocation.swissnums
-        enc._power_new_clist = self.clist
-        new_power_json = enc.encode(child_power)
-        packed = PackedPower(new_power_json, json.dumps(self.clist))
+        new_power_json = self._enc.encode(child_power)
+        new_power_json = new_power_json.replace(self._nonce, "__power__")
+        packed = PackedPower(new_power_json, json.dumps(self._clist))
         return packed
+
+def pack_power(turn, child_power):
+    # updates turn.swissnums, turn.native_powers, and turn.memories . Returns
+    # inner_power.
+    p = _Packing(turn, allow_native=True, allow_memory=True)
+    return p._pack(child_power)
+
+def pack_memory(turn, child_power):
+    # updates turn.swissnums . Returns data. You need to update turn.memories
+    p = _Packing(turn, allow_native=False, allow_memory=False)
+    return p._pack(child_power)
+
+def pack_args(turn, child_power):
+    # updates turn.swissnums . Returns inner_power.
+    p = _Packing(turn, allow_native=False, allow_memory=False)
+    return p._pack(child_power)
 
 class Unpacking:
     def __init__(self, turn, allow_native, allow_memory):
@@ -367,7 +379,7 @@ class Unpacking:
                 memid = old_clist[old_clid]
                 return self.turn.get_memory(memid) # data
             if ptype == "reference":
-                refid = old_clist[old_clid]
+                refid = tuple(old_clist[old_clid])
                 return self.turn.get_reference(refid) # InnerReference
             raise ValueError("unknown power type %s" % (ptype,))
         try:
@@ -386,7 +398,7 @@ def unpack_power(turn, power_json, clist_json):
 def unpack_memory(turn, power_json, clist_json):
     # updates turn.swissnums . Returns data. You need to update turn.memories
     up = Unpacking(turn, allow_native=False, allow_memory=False)
-    return up_unpack(power_json, clist_json)
+    return up.unpack(power_json, clist_json)
 
 def unpack_args(turn, power_json, clist_json):
     # updates turn.swissnums . Returns inner_power.
@@ -402,9 +414,10 @@ class Urbject:
         self.urbjid = urbjid
 
     def invoke(self, args, args_clist, from_vatid, debug=None):
+        t = Turn(self._server, self.db)
         code, powid = self.get_code_and_powid()
-        i = Invocation(self._server, self.db, code, powid)
-        return i.invoke(args, args_clist, from_vatid, debug)
+        rc = t.start_turn(code, powid, args, args_clist, from_vatid, debug)
+        return rc
 
     def get_code_and_powid(self):
         c = self.db.cursor()
