@@ -85,6 +85,39 @@ def call(args, power):
     assert power['memory']['counter'] == 18, power['memory']['counter']
 """
 
+F8b = """
+def call(args, power):
+    power['memory']['counter'] = 222
+"""
+
+F8a = """
+F8b = %r
+def call(args, power):
+    args['mem']['counter'] += 10
+    power['memory']['counter'] += 5
+    # F8b should be created with a memory object that is a copy of this one,
+    # not a persistent reference. Only stack frames (Invocations) which were
+    # born with this memory object are allowed to grant persistent access to
+    # it.
+    child_power = add(power, {'memory': args['mem']})
+    return power['make_urbject'](F8b, child_power)
+""" % F8b
+
+F8 = """
+F8a = %r
+
+def call(args, power):
+    power['memory']['counter'] = 0;
+    f8a = power['make_urbject'](F8a, add(power, {'memory': {'counter': 0}}))
+    power['memory']['f8a'] = f8a
+    # hey f8a: you can change the memory I give you
+    f8b = f8a.call({'mem': power['memory']}) # this is synchronous
+    # but you can't put it in the power you grant to f8b
+    f8b.call({})
+    power['memory']['f8b'] = f8b
+    assert power['memory']['counter'] == 10, power['memory']['counter']
+""" % F8a
+
 class Test(ServerBase, unittest.TestCase):
 
     def test_basic(self):
@@ -100,6 +133,7 @@ class Test(ServerBase, unittest.TestCase):
         u = Urbject(self.server, self.db, urbjid)
         code, powid = u.get_code_and_powid()
         t.start_turn(code, powid, args_json, "from_vatid", debug)
+        return t
 
     def _make_turn(self):
         return Turn(self.server, self.db)
@@ -177,3 +211,17 @@ class Test(ServerBase, unittest.TestCase):
         m = Memory(self.db, memid)
         self.failUnlessEqual(m.get_data()["counter"], 18)
         self.failUnlessEqual(m.get_data()["rc"], 20)
+
+    def test_call_no_shared_memory(self):
+        memid = create_memory(self.db, {"counter": 0})
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
+        urbjid = create_urbject(self.db, powid, F8)
+        t = self.invoke_urbjid(urbjid, "{}")
+        mem = Memory(self.db, memid).get_data()
+        self.failUnlessEqual(mem["counter"], 10)
+        f8a_u = Urbject(self.server, self.db, mem["f8a"]["swissnum"][1])
+        f8a_power = t.get_power(f8a_u.get_code_and_powid()[1])
+        self.failUnlessEqual(f8a_power["memory"]["counter"], 5)
+        f8b_u = Urbject(self.server, self.db, mem["f8b"]["swissnum"][1])
+        f8b_power = t.get_power(f8b_u.get_code_and_powid()[1])
+        self.failUnlessEqual(f8b_power["memory"]["counter"], 222)

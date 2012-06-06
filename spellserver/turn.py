@@ -34,6 +34,7 @@ class Turn:
         self.db = db
         self.outbound_messages = []
 
+        self._invocation_stack = []
         self.powid_to_power = {} # powid -> inner 'power' dict
         self.power_to_powid = {} # id(inner-dict) -> (powid, inner-dict)
         # retain inner-dict to keep it alive, so the id() isn't re-assigned
@@ -122,9 +123,13 @@ class Turn:
 
     # serialization/packing
     def put_memory(self, data):
-        if id(data) in self.memory_data_to_memid:
-            # we've seen this before, so this child will share the parent's
-            # Memory
+        # if make_urbject() is called with power.memory=M, inside an
+        # Invocation that received M in its own power.memory, then the child
+        # is supposed to share persistent access to M.
+        if  (self._invocation_stack
+             and self._invocation_stack[-1].memory_data_id
+             and self._invocation_stack[-1].memory_data_id == id(data)):
+            # this child will share the parent's Memory
             memid = self.memory_data_to_memid[id(data)]
         else:
             # otherwise, we want to create a new Memory object, with 'data'
@@ -150,8 +155,11 @@ class Turn:
 
     def start_turn(self, code, powid, args_json, from_vatid, debug=None):
         assert debug is None or callable(debug)
-        first_i = Invocation(self, code, powid)
-        rc = first_i._invoke(args_json, from_vatid, debug)
+        first_invocation = Invocation(self, code, powid)
+        self._invocation_stack.append(first_invocation)
+        rc = first_invocation._invoke(args_json, from_vatid, debug)
+        self._invocation_stack.pop()
+        assert not self._invocation_stack
         self._commit_turn()
         return rc
 
@@ -160,7 +168,10 @@ class Turn:
         assert target_vatid == self._vatid # must be local
         ur = Urbject(self._server, self.db, target_urbjid)
         code, powid = ur.get_code_and_powid()
-        rc = Invocation(self, code, powid)._execute(args, self._vatid)
+        next_invocation = Invocation(self, code, powid)
+        self._invocation_stack.append(next_invocation)
+        rc = next_invocation._execute(args, self._vatid)
+        self._invocation_stack.pop()
         return rc
 
     def sendOnly(self, inner_ref, args):
@@ -188,6 +199,9 @@ class Invocation:
         # self.inner_power holds the 'power' dictionary for the same frame,
         # passed to sandboxed code as power=
         self.inner_power = turn.get_power(powid)
+        self.memory_data_id = None
+        if "memory" in self.inner_power:
+            self.memory_data_id = id(self.inner_power["memory"])
 
     def _invoke(self, args_json, from_vatid, debug=None):
         assert debug is None or callable(debug)

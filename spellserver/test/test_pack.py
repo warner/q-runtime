@@ -5,7 +5,7 @@ from .common import ServerBase
 from ..common import NativePower, InnerReference
 from ..memory import create_memory, Memory
 from ..urbject import create_urbject, create_power_for_memid
-from ..turn import Turn
+from ..turn import Turn, Invocation
 from .. import pack
 
 class _UnpackBase(ServerBase):
@@ -135,6 +135,8 @@ class _PackBase(ServerBase):
         memid = create_memory(self.db, {"counter": 0})
         memory_data = t.get_memory(memid)
         powid = create_power_for_memid(self.db, memid)
+        inv = Invocation(t, "", powid)
+        t._invocation_stack.append(inv)
         urbjid = create_urbject(self.db, powid, "code")
         refid = ("vatid", urbjid)
         ref = t.get_reference(refid)
