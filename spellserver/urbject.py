@@ -33,8 +33,7 @@ def create_power_for_memid(db, memid=None, grant_make_urbject=False):
 
 
 class Urbject:
-    def __init__(self, server, db, urbjid):
-        self._server = server
+    def __init__(self, db, urbjid):
         self.db = db
         self.urbjid = urbjid
 

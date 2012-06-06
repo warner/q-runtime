@@ -125,13 +125,13 @@ class Test(ServerBase, unittest.TestCase):
         memid = create_memory(self.db)
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F1)
-        u = Urbject(self.server, self.db, urbjid)
+        u = Urbject(self.db, urbjid)
         del u
 
     def invoke_urbjid(self, urbjid, args_json, debug=None):
         assert debug is None or callable(debug)
         t = self._make_turn()
-        u = Urbject(self.server, self.db, urbjid)
+        u = Urbject(self.db, urbjid)
         code, powid = u.get_code_and_powid()
         t.start_turn(code, powid, args_json, "from_vatid", debug)
         return t
@@ -220,10 +220,10 @@ class Test(ServerBase, unittest.TestCase):
         t = self.invoke_urbjid(urbjid, "{}")
         mem = Memory(self.db, memid).get_data()
         self.failUnlessEqual(mem["counter"], 10)
-        f8a_u = Urbject(self.server, self.db, mem["f8a"]["swissnum"][1])
+        f8a_u = Urbject(self.db, mem["f8a"]["swissnum"][1])
         f8a_power = t.get_power(f8a_u.get_code_and_powid()[1])
         self.failUnlessEqual(f8a_power["memory"]["counter"], 5)
-        f8b_u = Urbject(self.server, self.db, mem["f8b"]["swissnum"][1])
+        f8b_u = Urbject(self.db, mem["f8b"]["swissnum"][1])
         f8b_power = t.get_power(f8b_u.get_code_and_powid()[1])
         self.failUnlessEqual(f8b_power["memory"]["counter"], 222)
 
@@ -232,7 +232,7 @@ class Test(ServerBase, unittest.TestCase):
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F8)
         self.invoke_urbjid(urbjid, "{}")
-        u = Urbject(self.server, self.db, urbjid)
+        u = Urbject(self.db, urbjid)
         a1 = list_authorities(u.get_raw_power(), False)
         self.failUnless( ("native", "make_urbject") in a1, a1)
         self.failUnless( ("memory", memid) in a1, a1)
@@ -243,7 +243,7 @@ class Test(ServerBase, unittest.TestCase):
         self.failUnless( ("reference", tuple(md["f8a"]["swissnum"])) in a2, a2)
         self.failUnless( ("reference", tuple(md["f8b"]["swissnum"])) in a2, a2)
 
-        f8a_u = Urbject(self.server, self.db, md["f8a"]["swissnum"][1])
+        f8a_u = Urbject(self.db, md["f8a"]["swissnum"][1])
         f8a_memid = json.loads(f8a_u.get_raw_power())["memory"]["swissnum"]
         f8a_m = Memory(self.db, f8a_memid)
         a3 = list_authorities(f8a_u.get_raw_power(), False)
@@ -252,7 +252,7 @@ class Test(ServerBase, unittest.TestCase):
         a4 = list_authorities(f8a_m.get_raw_data(), False)
         self.failIf(a4)
 
-        f8b_u = Urbject(self.server, self.db, md["f8b"]["swissnum"][1])
+        f8b_u = Urbject(self.db, md["f8b"]["swissnum"][1])
         f8b_memid = json.loads(f8b_u.get_raw_power())["memory"]["swissnum"]
         f8b_m = Memory(self.db, f8b_memid)
         a5 = list_authorities(f8b_u.get_raw_power(), False)

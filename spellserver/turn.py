@@ -166,7 +166,7 @@ class Turn:
     def local_sync_call(self, inner_ref, args):
         target_vatid, target_urbjid = self.swissnums[inner_ref]
         assert target_vatid == self._vatid # must be local
-        ur = Urbject(self._server, self.db, target_urbjid)
+        ur = Urbject(self.db, target_urbjid)
         code, powid = ur.get_code_and_powid()
         next_invocation = Invocation(self, code, powid)
         self._invocation_stack.append(next_invocation)

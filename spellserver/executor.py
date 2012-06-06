@@ -35,7 +35,7 @@ class ExecutionServer(service.Service):
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])
-            u = Urbject(self, self.db, urbjid)
+            u = Urbject(self.db, urbjid)
             code, powid = u.get_code_and_powid()
             t = Turn(self, self.db)
             t.start_turn(code, powid, msg["args_json"], from_vatid)
