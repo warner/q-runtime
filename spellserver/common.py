@@ -1,10 +1,4 @@
 
-class CList(dict):
-    def add(self, value):
-        key = len(self)
-        self[key] = value
-        return key
-
 class InnerReference:
     def __init__(self, turn):
         self._turn = turn

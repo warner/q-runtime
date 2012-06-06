@@ -2,7 +2,6 @@
 import json
 from twisted.trial import unittest
 from .common import ServerBase
-from ..pack import PackedPower
 from ..memory import create_memory, Memory
 from ..urbject import create_urbject, create_power_for_memid, Urbject
 from ..turn import Turn
@@ -95,12 +94,12 @@ class Test(ServerBase, unittest.TestCase):
         u = Urbject(self.server, self.db, urbjid)
         del u
 
-    def invoke_urbjid(self, urbjid, args_json, args_clist_json, debug=None):
+    def invoke_urbjid(self, urbjid, args_json, debug=None):
+        assert debug is None or callable(debug)
         t = self._make_turn()
         u = Urbject(self.server, self.db, urbjid)
         code, powid = u.get_code_and_powid()
-        t.start_turn(code, powid, args_json, args_clist_json, "from_vatid",
-                     debug)
+        t.start_turn(code, powid, args_json, "from_vatid", debug)
 
     def _make_turn(self):
         return Turn(self.server, self.db)
@@ -109,78 +108,72 @@ class Test(ServerBase, unittest.TestCase):
         msgs = []
         powid = create_power_for_memid(self.db)
         t = self._make_turn()
-        t.start_turn(F1, powid, "{}", "{}", "from_vatid", debug=msgs.append)
+        t.start_turn(F1, powid, "{}", "from_vatid", debug=msgs.append)
         self.failUnlessEqual(msgs, ["I have power!"])
 
     def test_memory(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
         t = self._make_turn()
-        t.start_turn(F2, powid, '{"delta": 1}', "{}", "from_vatid")
+        t.start_turn(F2, powid, '{"delta": 1}', "from_vatid")
         m = Memory(self.db, memid)
-        self.failUnlessEqual(m.get_static_data()["counter"], 1)
+        self.failUnlessEqual(m.get_data()["counter"], 1)
 
     def test_invoke(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F2)
-        self.invoke_urbjid(urbjid, '{"delta": 2}', "{}")
+        self.invoke_urbjid(urbjid, '{"delta": 2}')
         m = Memory(self.db, memid)
-        self.failUnlessEqual(m.get_static_data()["counter"], 2)
+        self.failUnlessEqual(m.get_data()["counter"], 2)
 
     def test_deny_make_urbject(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=False)
         urbjid = create_urbject(self.db, powid, F4)
         msgs = []
-        self.invoke_urbjid(urbjid, "{}", "{}", debug=msgs.append)
+        self.invoke_urbjid(urbjid, "{}", debug=msgs.append)
         self.failUnlessEqual(msgs, [False])
 
     def test_sub_urbject(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F3)
-        self.invoke_urbjid(urbjid, "{}", "{}")
+        self.invoke_urbjid(urbjid, "{}")
         m = Memory(self.db, memid)
-        m_data, m_clist = m.get_data()
-        u2id = m_clist[str(m_data["u2"]["clid"])][1]
-        self.invoke_urbjid(u2id, "{}", "{}")
-        self.failUnlessEqual(m.get_static_data()["counter"], 10)
-
-    def pack_args(self, args, clist):
-        return PackedPower(json.dumps(args), json.dumps(clist))
+        u2id = m.get_data()["u2"]["swissnum"][1]
+        self.invoke_urbjid(u2id, "{}")
+        self.failUnlessEqual(m.get_data()["counter"], 10)
 
     def test_invoke_args(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F5)
-        args = json.dumps({"foo": {"__power__": "reference", "clid": "1"}})
-        args_clist = json.dumps({"1": ("vatid","foo-urbjid")})
+        args = json.dumps({"foo": {"__power__": "reference",
+                                   "swissnum": ("vatid","foo-urbjid")}})
         # TODO: replace foo-urbjid with something real (local or remote)
-        self.invoke_urbjid(urbjid, args, args_clist)
+        self.invoke_urbjid(urbjid, args)
         m = Memory(self.db, memid)
-        m_data, m_clist = m.get_data()
-        fooid = m_clist[str(m_data["argfoo"]["clid"])]
+        fooid = m.get_data()["argfoo"]["swissnum"]
         self.failUnlessEqual(fooid, [u"vatid",u"foo-urbjid"])
 
     def test_add(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F6)
-        self.invoke_urbjid(urbjid, "{}", "{}")
+        self.invoke_urbjid(urbjid, "{}")
         m = Memory(self.db, memid)
-        m_data, m_clist = m.get_data()
-        u2id = m_clist[str(m_data["u2"]["clid"])][1]
-        self.invoke_urbjid(u2id, "{}", "{}")
-        self.failUnlessEqual(m.get_static_data()["counter"], 15)
+        u2id = m.get_data()["u2"]["swissnum"][1]
+        self.invoke_urbjid(u2id, "{}")
+        self.failUnlessEqual(m.get_data()["counter"], 15)
 
     def test_call_sync(self):
         memid = create_memory(self.db, {"counter": 0})
         powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
         urbjid = create_urbject(self.db, powid, F7)
-        self.invoke_urbjid(urbjid, "{}", "{}")
+        self.invoke_urbjid(urbjid, "{}")
         # that will throw an exception unless it worked, but check anyways in
         # case the exception-handling code gets broken
         m = Memory(self.db, memid)
-        self.failUnlessEqual(m.get_static_data()["counter"], 18)
-        self.failUnlessEqual(m.get_static_data()["rc"], 20)
+        self.failUnlessEqual(m.get_data()["counter"], 18)
+        self.failUnlessEqual(m.get_data()["rc"], 20)

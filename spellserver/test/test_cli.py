@@ -33,12 +33,11 @@ class CLI(ServerBase, PollMixin, unittest.TestCase):
         self.failUnless(memid.startswith("mem0-"), memid)
         out = run("list-memory", b)
         lines = out.splitlines()
-        self.failUnlessEqual(lines[0], "memid: size / clist-length")
-        self.failUnlessEqual(lines[1], "%s: 2 / 0" % memid)
+        self.failUnlessEqual(lines[0], "memid: size")
+        self.failUnlessEqual(lines[1], "%s: 2" % memid)
         self.failUnlessEqual(lines[-1], "1 memory slots total")
         out = run("dump-memory", b, memid)
         self.failUnless("DATA: {}" in out, out)
-        self.failUnless("CLIST: {}" in out, out)
 
         codefile = self.mktemp()
         f = open(codefile, "wb")
@@ -56,9 +55,11 @@ class CLI(ServerBase, PollMixin, unittest.TestCase):
         lines = run("dump-urbject", b, spid).splitlines()
         self.failUnlessEqual(lines[0], "vat: %s" % vatid)
         self.failUnlessEqual(lines[1], "urbj: %s" % urbjid)
-        memid = re.search(r'(mem0-\w+)', lines[4]).group(1)
+        mo = re.search(r'(mem0-\w+)', lines[3])
+        self.failUnless(mo, "no mem0-* in '%s'" % lines[3])
+        memid = mo.group(1)
         m = Memory(self.db, memid)
-        self.failUnlessEqual(m.get_static_data(), {})
+        self.failUnlessEqual(m.get_data(), {})
 
         #rc,out,err = self.runcli("send", "-d", b, spid)
         # 'send' does a blocking urlopen() call, so we have to call it from a
@@ -73,6 +74,6 @@ class CLI(ServerBase, PollMixin, unittest.TestCase):
         d.addCallback(_sent)
         def _then(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data(), {"data": 1234})
+            self.failUnlessEqual(m.get_data(), {"data": 1234})
         d.addCallback(_then)
         return d

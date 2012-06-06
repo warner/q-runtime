@@ -31,15 +31,14 @@ class ExecutionServer(service.Service):
             memid = str(msg["memid"])
             powid = create_power_for_memid(self.db, memid)
             t = Turn(self, self.db)
-            t.start_turn(msg["code"], powid, msg["args_json"], "{}", from_vatid)
+            t.start_turn(msg["code"], powid, msg["args_json"], from_vatid)
             return
         if command == "invoke":
             urbjid = str(msg["urbjid"])
             u = Urbject(self, self.db, urbjid)
             code, powid = u.get_code_and_powid()
             t = Turn(self, self.db)
-            t.start_turn(code, powid, msg["args_json"], msg["args_clist_json"],
-                         from_vatid)
+            t.start_turn(code, powid, msg["args_json"], from_vatid)
             return
         #raise ValueError("unknown command '%s'" % command)
         log.msg("ignored command '%s'" % command)
@@ -53,15 +52,13 @@ class ExecutionServer(service.Service):
         msg = {"command": "execute",
                "memid": memid,
                "code": code,
-               "args_json": json.dumps(args),
-               "args_clist_json": json.dumps({})}
+               "args_json": json.dumps(args)}
         self._comms_server.send_message(vatid, json.dumps(msg))
 
     def send_invoke(self, vatid, urbjid, args):
         msg = {"command": "invoke",
                "urbjid": urbjid,
-               "args_json": json.dumps(args),
-               "args_clist_json": json.dumps({})}
+               "args_json": json.dumps(args)}
         self._comms_server.send_message(vatid, json.dumps(msg))
 
     def poke(self, body):
@@ -70,8 +67,7 @@ class ExecutionServer(service.Service):
             vatid, urbjid = util.parse_spid(send_msg["spid"])
             msg = {"command": "invoke",
                    "urbjid": urbjid,
-                   "args_json": send_msg["args"],
-                   "args_clist_json": json.dumps({})}
+                   "args_json": send_msg["args"]}
             self._comms_server.send_message(vatid, json.dumps(msg))
             return "message sent"
         if body.startswith("create-memory"):

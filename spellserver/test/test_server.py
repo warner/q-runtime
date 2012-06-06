@@ -56,30 +56,27 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         msg = {"command": "invoke",
                "urbjid": urbjid,
                "args_json": json.dumps({"foo": 123}),
-               "args_clist_json": json.dumps({}),
                }
 
         self.executor.process_request(msg, "from-vatid")
         m = Memory(self.db, memid)
-        self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
+        self.failUnlessEqual(m.get_data()["argfoo"], 123)
 
     def test_reference(self):
         memid = create_memory(self.db)
         powid = create_power_for_memid(self.db, memid)
         urbjid = create_urbject(self.db, powid, F1)
 
-        args = {"foo": {"__power__": "reference", "clid": "1"}}
-        args_clist = {"1": ("vatid","foo-urbjid")}
+        args = {"foo": {"__power__": "reference",
+                        "swissnum": ("vatid","foo-urbjid")}}
         msg = {"command": "invoke",
                "urbjid": urbjid,
                "args_json": json.dumps(args),
-               "args_clist_json": json.dumps(args_clist),
                }
 
         self.executor.process_request(msg, "from-vatid")
         m = Memory(self.db, memid)
-        m_data, m_clist = m.get_data()
-        fooid = m_clist[str(m_data["argfoo"]["clid"])]
+        fooid = m.get_data()["argfoo"]["swissnum"]
         self.failUnlessEqual(fooid, [u"vatid",u"foo-urbjid"])
 
     def test_loopback(self):
@@ -90,7 +87,6 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         msg = {"command": "invoke",
                "urbjid": urbjid,
                "args_json": json.dumps({"foo": 123}),
-               "args_clist_json": json.dumps({}),
                }
         msg_json = json.dumps(msg)
         self.server.send_message(self.server.vatid, msg_json) # to yourself
@@ -98,7 +94,7 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
+            self.failUnlessEqual(m.get_data()["argfoo"], 123)
         d.addCallback(_then)
         return d
 
@@ -115,19 +111,18 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         #urb_2.add_reference_to_power("ref", urbjid_1)
 
         # trigger F2({ref:F1})
-        args = {"ref": {"__power__": "reference", "clid": "1"}}
-        args_clist = {"1": (vatid_1,urbjid_1)}
+        args = {"ref": {"__power__": "reference",
+                        "swissnum": (vatid_1,urbjid_1)}}
         msg = {"command": "invoke",
                "urbjid": urbjid_2,
                "args_json": json.dumps(args),
-               "args_clist_json": json.dumps(args_clist),
                }
 
         self.executor.process_request(msg, "from-vatid")
         d = self.poll(lambda: self.executor._debug_processed_counter >= 2)
         def _then(ign):
             m = Memory(self.db, memid_1)
-            m_data, m_clist = m.get_data()
+            m_data = m.get_data()
             self.failUnlessEqual(m_data["argfoo"], 34)
         d.addCallback(_then)
         return d
@@ -141,14 +136,13 @@ class Local(ServerBase, PollMixin, unittest.TestCase):
         msg = {"command": "invoke",
                "urbjid": urbjid,
                "args_json": json.dumps({}),
-               "args_clist_json": json.dumps({}),
                }
 
         self.executor.process_request(msg, "from-vatid")
         d = self.poll(lambda: self.executor._debug_processed_counter >= 2)
         def _then(ign):
             m = Memory(self.db, memid)
-            m_data, m_clist = m.get_data()
+            m_data = m.get_data()
             self.failUnlessEqual(m_data["argfoo"], 56)
         d.addCallback(_then)
         return d
@@ -163,7 +157,6 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
         msg = {"command": "invoke",
                "urbjid": urbjid,
                "args_json": json.dumps({"foo": 123}),
-               "args_clist_json": json.dumps({}),
                }
         msg_json = json.dumps(msg)
         self.server2.send_message(self.server.vatid, msg_json)
@@ -171,13 +164,12 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
         d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data()["argfoo"], 123)
+            self.failUnlessEqual(m.get_data()["argfoo"], 123)
 
             # send a second one, make sure the DB msgnum updater works
             msg = {"command": "invoke",
                    "urbjid": urbjid,
                    "args_json": json.dumps({"foo": 456}),
-                   "args_clist_json": json.dumps({}),
                    }
             msg_json = json.dumps(msg)
             self.server2.send_message(self.server.vatid, msg_json)
@@ -185,7 +177,7 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
         d.addCallback(_then)
         def _then2(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data()["argfoo"], 456)
+            self.failUnlessEqual(m.get_data()["argfoo"], 456)
         d.addCallback(_then2)
         return d
 
@@ -204,12 +196,11 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
                                    create_power_for_memid(self.db2, memid2),
                                    F4b)
 
-        args = {"remote": {"__power__": "reference", "clid": "1"}}
-        args_clist = {"1": (self.server2.vatid, urbjid_f2)}
+        args = {"remote": {"__power__": "reference",
+                           "swissnum": (self.server2.vatid, urbjid_f2)}}
         msg = {"command": "invoke",
                "urbjid": urbjid_f4,
                "args_json": json.dumps(args),
-               "args_clist_json": json.dumps(args_clist),
                }
         msg_json = json.dumps(msg)
         self.server2.send_message(self.server.vatid, msg_json)
@@ -220,7 +211,7 @@ class Remote(TwoServerBase, PollMixin, unittest.TestCase):
                       and self.executor2._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data()["results"], 34)
+            self.failUnlessEqual(m.get_data()["results"], 34)
         d.addCallback(_then)
         return d
 
@@ -234,7 +225,7 @@ class Poke(TwoServerBase, PollMixin, unittest.TestCase):
         self.failUnless(msg.startswith("created memory "), msg)
         memid = msg.split()[2]
         m = Memory(self.db, memid)
-        self.failUnlessEqual(m.get_static_data(), {})
+        self.failUnlessEqual(m.get_data(), {})
 
     def test_send(self):
         memid = create_memory(self.db)
@@ -251,7 +242,7 @@ class Poke(TwoServerBase, PollMixin, unittest.TestCase):
         d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data(), {"argfoo": "bar"})
+            self.failUnlessEqual(m.get_data(), {"argfoo": "bar"})
         d.addCallback(_then)
         return d
 
@@ -277,6 +268,6 @@ class Poke(TwoServerBase, PollMixin, unittest.TestCase):
         d = self.poll(lambda: self.executor._debug_processed_counter >= 1)
         def _then(ign):
             m = Memory(self.db, memid)
-            self.failUnlessEqual(m.get_static_data()["argfoo"], 12)
+            self.failUnlessEqual(m.get_data()["argfoo"], 12)
         d.addCallback(_then)
         return d

@@ -15,7 +15,7 @@ def install(so, out, err):
     memid = None
     if os.path.exists(memory_file):
         data = open(memory_file, "rb").read().decode("utf-8")
-        memid = memory.create_raw_memory(db, data, "{}")
+        memid = memory.create_raw_memory(db, data,)
     powid = urbject.create_power_for_memid(db, memid, True)
     for fn in os.listdir(codedir):
         if not fn.endswith(".py"):

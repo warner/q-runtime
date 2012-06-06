@@ -17,14 +17,14 @@ def create_memory_from_file(basedir, memory_file, err):
     if not db:
         return 1
     data = open(memory_file, "rb").read().decode("utf-8")
-    memid = memory.create_raw_memory(db, data, "{}")
+    memid = memory.create_raw_memory(db, data)
     return memid
 
 def create_memory_from_data(basedir, data, err):
     db = get_db(None, err, basedir)
     if not db:
         return 1
-    memid = memory.create_raw_memory(db, json.dumps(data), "{}")
+    memid = memory.create_raw_memory(db, json.dumps(data))
     return memid
 
 def create_memory(so, out, err):
@@ -36,7 +36,7 @@ def create_memory(so, out, err):
         json.loads(data) # make sure it's really JSON
     else:
         data = "{}"
-    memid = memory.create_raw_memory(db, data, "{}")
+    memid = memory.create_raw_memory(db, data)
     print >>out, "new memid: %s" % memid
     return 0
 
@@ -45,12 +45,11 @@ def list_memory(so, out, err):
     if not db:
         return 1
     c = db.cursor()
-    c.execute("SELECT `memid`,`data_json`, `data_clist_json` FROM `memory`")
+    c.execute("SELECT `memid`,`data_json` FROM `memory`")
     mems = c.fetchall()
-    print >>out, "memid: size / clist-length"
-    for (memid, data_json, clist_json) in sorted(mems):
-        print >>out, "%s: %d / %s" % (memid, len(data_json),
-                                      len(json.loads(clist_json)))
+    print >>out, "memid: size"
+    for (memid, data_json) in sorted(mems):
+        print >>out, "%s: %d" % (memid, len(data_json))
     print >>out, "%d memory slots total" % len(mems)
     return 0
 
@@ -60,15 +59,13 @@ def dump_memory(so, out, err):
         return 1
     memid = so["memid"]
     c = db.cursor()
-    c.execute("SELECT `data_json`, `data_clist_json` FROM `memory`"
-              " WHERE `memid`=?", (memid,))
+    c.execute("SELECT `data_json` FROM `memory` WHERE `memid`=?", (memid,))
     mems = c.fetchall()
     if not mems:
         print >>out, "memid not found"
         return 0
-    data_json, clist_json = mems[0]
+    (data_json,) = mems[0]
     print >>out, "DATA:", data_json.strip()
-    print >>out, "CLIST:", clist_json.strip()
     return 0
 
 def create_urbject(so, out, err):
@@ -119,11 +116,9 @@ def dump_urbject(so, out, err):
         return 0
     powid, code = mems[0]
     print >>out, "power:", powid
-    c.execute("SELECT `power_json`, `power_clist_json` FROM `power`"
-              " WHERE `powid`=?", (powid,))
-    power_json, clist_json = c.fetchone()
+    c.execute("SELECT `power_json` FROM `power` WHERE `powid`=?", (powid,))
+    (power_json,) = c.fetchone()
     print >>out, "POWER:", power_json.strip()
-    print >>out, "CLIST:", clist_json.strip()
     print >>out, "CODE:"
     print >>out, code.strip()
     return 0

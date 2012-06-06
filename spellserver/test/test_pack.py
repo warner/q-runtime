@@ -20,13 +20,12 @@ class _UnpackBase(ServerBase):
 class UnpackPower(_UnpackBase, unittest.TestCase):
     def test_good(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "power": {"__power__": "native", "clid": "1"},
-                           "memory": {"__power__": "memory", "clid": "2"},
-                           "ref": {"__power__": "reference", "clid": "3"},
-                           })
-        data_clist = json.dumps({"1": "make_urbject", "2": memid, "3": refid})
-        p = pack.unpack_power(t, data, data_clist)
+        data = {"static": {"foo": "bar"},
+                "power": {"__power__": "native", "swissnum": "make_urbject"},
+                "memory": {"__power__": "memory", "swissnum": memid},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                }
+        p = pack.unpack_power(t, json.dumps(data))
         self.failUnlessEqual(set(p.keys()),
                              set(["static", "power", "memory", "ref"]))
         self.failUnlessEqual(p["static"], {"foo": "bar"})
@@ -40,39 +39,36 @@ class UnpackPower(_UnpackBase, unittest.TestCase):
 
     def test_bad_only_one_memory(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "power": {"__power__": "native", "clid": "1"},
-                           "memory": {"__power__": "memory", "clid": "2"},
-                           "ref": {"__power__": "reference", "clid": "3"},
-                           "sub": {"extra-memory":
-                                   {"__power__": "memory", "clid": "2"},
-                                   },
-                           })
-        data_clist = json.dumps({"1": "make_urbject", "2": memid, "3": refid})
+        data = {"static": {"foo": "bar"},
+                "power": {"__power__": "native", "swissnum": "make_urbject"},
+                "memory": {"__power__": "memory", "swissnum": memid},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                "sub": {"extra-memory":
+                        {"__power__": "memory", "swissnum": memid},
+                        },
+                }
         e = self.failUnlessRaises(ValueError,
-                                  pack.unpack_power, t, data, data_clist)
+                                  pack.unpack_power, t, json.dumps(data))
         self.failUnlessEqual(str(e), "only one Memory per Power")
 
     def test_bad_unknown_power_type(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "power": {"__power__": "unknown", "clid": "1"},
-                           "memory": {"__power__": "memory", "clid": "2"},
-                           "ref": {"__power__": "reference", "clid": "3"},
-                           })
-        data_clist = json.dumps({"1": "make_urbject", "2": memid, "3": refid})
+        data = {"static": {"foo": "bar"},
+                "power": {"__power__": "unknown", "swissnum": "make_urbject"},
+                "memory": {"__power__": "memory", "swissnum": memid},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                }
         e = self.failUnlessRaises(ValueError,
-                                  pack.unpack_power, t, data, data_clist)
+                                  pack.unpack_power, t, json.dumps(data))
         self.failUnlessEqual(str(e), "unknown power type 'unknown'")
 
 class UnpackMemory(_UnpackBase, unittest.TestCase):
     def test_good(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "ref": {"__power__": "reference", "clid": "1"},
-                           })
-        data_clist = json.dumps({"1": refid})
-        p = pack.unpack_memory(t, data, data_clist)
+        data = {"static": {"foo": "bar"},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                }
+        p = pack.unpack_memory(t, json.dumps(data))
         self.failUnlessEqual(set(p.keys()), set(["static", "ref"]))
         self.failUnlessEqual(p["static"], {"foo": "bar"})
         self.failUnless(isinstance(p["ref"], InnerReference), p["ref"])
@@ -80,35 +76,32 @@ class UnpackMemory(_UnpackBase, unittest.TestCase):
 
     def test_bad_native_in_memory(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "ref": {"__power__": "reference", "clid": "1"},
-                           "bad": {"__power__": "native", "clid": "2"},
-                           })
-        data_clist = json.dumps({"1": refid, "2": "make_urbject"})
+        data = {"static": {"foo": "bar"},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                "bad": {"__power__": "native", "swissnum": "make_urbject"},
+                }
         e = self.failUnlessRaises(ValueError,
-                                  pack.unpack_memory, t, data, data_clist)
+                                  pack.unpack_memory, t, json.dumps(data))
         self.failUnlessEqual(str(e), "unknown power type 'native'")
 
     def test_bad_memory_in_memory(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "ref": {"__power__": "reference", "clid": "1"},
-                           "bad": {"__power__": "memory", "clid": "2"},
-                           })
-        data_clist = json.dumps({"1": refid, "2": memid})
+        data = {"static": {"foo": "bar"},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                "bad": {"__power__": "memory", "swissnum": memid},
+                }
         e = self.failUnlessRaises(ValueError,
-                                  pack.unpack_memory, t, data, data_clist)
+                                  pack.unpack_memory, t, json.dumps(data))
         self.failUnlessEqual(str(e), "only one Memory per Power")
         # TODO: not the best error message
 
 class UnpackArgs(_UnpackBase, unittest.TestCase):
     def test_good(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "ref": {"__power__": "reference", "clid": "1"},
-                           })
-        data_clist = json.dumps({"1": refid})
-        p = pack.unpack_args(t, data, data_clist)
+        data = {"static": {"foo": "bar"},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                }
+        p = pack.unpack_args(t, json.dumps(data))
         self.failUnlessEqual(set(p.keys()), set(["static", "ref"]))
         self.failUnlessEqual(p["static"], {"foo": "bar"})
         self.failUnless(isinstance(p["ref"], InnerReference), p["ref"])
@@ -116,24 +109,22 @@ class UnpackArgs(_UnpackBase, unittest.TestCase):
 
     def test_bad_native_in_args(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "ref": {"__power__": "reference", "clid": "1"},
-                           "bad": {"__power__": "native", "clid": "2"},
-                           })
-        data_clist = json.dumps({"1": refid, "2": "make_urbject"})
+        data = {"static": {"foo": "bar"},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                "bad": {"__power__": "native", "swissnum": "make_urbject"},
+                }
         e = self.failUnlessRaises(ValueError,
-                                  pack.unpack_args, t, data, data_clist)
+                                  pack.unpack_args, t, json.dumps(data))
         self.failUnlessEqual(str(e), "unknown power type 'native'")
 
     def test_bad_memory_in_args(self):
         t, memid, powid, urbjid, refid = self.prepare()
-        data = json.dumps({"static": {"foo": "bar"},
-                           "ref": {"__power__": "reference", "clid": "1"},
-                           "bad": {"__power__": "memory", "clid": "2"},
-                           })
-        data_clist = json.dumps({"1": refid, "2": memid})
+        data = {"static": {"foo": "bar"},
+                "ref": {"__power__": "reference", "swissnum": refid},
+                "bad": {"__power__": "memory", "swissnum": memid},
+                }
         e = self.failUnlessRaises(ValueError,
-                                  pack.unpack_args, t, data, data_clist)
+                                  pack.unpack_args, t, json.dumps(data))
         self.failUnlessEqual(str(e), "only one Memory per Power")
         # TODO: not the best error message
 
@@ -155,19 +146,17 @@ class PackArgs(_PackBase, unittest.TestCase):
         child = {"static": {"foo": "bar"},
                  "ref": ref,
                  }
-        pp = pack.pack_args(t, child)
-        power = json.loads(pp.power_json)
-        clist = json.loads(pp.power_clist_json)
+        packed = pack.pack_args(t, child)
+        power = json.loads(packed)
         self.failUnlessEqual(power, {"static": {"foo": "bar"},
                                      "ref": {"__power__": "reference",
-                                             "clid": 0}})
-        self.failUnlessEqual(clist, {"0": list(refid)})
+                                             "swissnum": list(refid)}})
 
     def test_bad_forged_power(self):
         t, native, memid, memory_data, refid, ref = self.prepare()
         child = {"static": {"foo": "bar"},
                  "ref": ref,
-                 "bad": {"__power__": "reference", "clid": 0},
+                 "bad": {"__power__": "reference", "swissnum": 0},
                  }
         e = self.failUnlessRaises(ValueError, pack.pack_args, t, child)
         self.failUnlessEqual(str(e), "forbidden __power__ in serializing data")
@@ -178,14 +167,12 @@ class PackArgs(_PackBase, unittest.TestCase):
                  "ref": ref,
                  "memory": memory_data, # treated as normal data
                  }
-        pp = pack.pack_args(t, child)
-        power = json.loads(pp.power_json)
-        clist = json.loads(pp.power_clist_json)
+        packed = pack.pack_args(t, child)
+        power = json.loads(packed)
         self.failUnlessEqual(power, {"static": {"foo": "bar"},
                                      "ref": {"__power__": "reference",
-                                             "clid": 0},
+                                             "swissnum": list(refid)},
                                      "memory": {"counter": 0}})
-        self.failUnlessEqual(clist, {"0": list(refid)})
 
     def test_bad_native_in_args(self):
         t, native, memid, memory_data, refid, ref = self.prepare()
@@ -203,19 +190,17 @@ class PackMemory(_PackBase, unittest.TestCase):
         child = {"static": {"foo": "bar"},
                  "ref": ref,
                  }
-        pp = pack.pack_memory(t, child)
-        power = json.loads(pp.power_json)
-        clist = json.loads(pp.power_clist_json)
+        packed = pack.pack_memory(t, child)
+        power = json.loads(packed)
         self.failUnlessEqual(power, {"static": {"foo": "bar"},
                                      "ref": {"__power__": "reference",
-                                             "clid": 0}})
-        self.failUnlessEqual(clist, {"0": list(refid)})
+                                             "swissnum": list(refid)}})
 
     def test_bad_forged_power(self):
         t, native, memid, memory_data, refid, ref = self.prepare()
         child = {"static": {"foo": "bar"},
                  "ref": ref,
-                 "bad": {"__power__": "reference", "clid": 0},
+                 "bad": {"__power__": "reference", "swissnum": 0},
                  }
         e = self.failUnlessRaises(ValueError, pack.pack_memory, t, child)
         self.failUnlessEqual(str(e), "forbidden __power__ in serializing data")
@@ -226,14 +211,12 @@ class PackMemory(_PackBase, unittest.TestCase):
                  "ref": ref,
                  "memory": memory_data, # treated as normal data
                  }
-        pp = pack.pack_memory(t, child)
-        power = json.loads(pp.power_json)
-        clist = json.loads(pp.power_clist_json)
+        packed = pack.pack_memory(t, child)
+        power = json.loads(packed)
         self.failUnlessEqual(power, {"static": {"foo": "bar"},
                                      "ref": {"__power__": "reference",
-                                             "clid": 0},
+                                             "swissnum": list(refid)},
                                      "memory": {"counter": 0}})
-        self.failUnlessEqual(clist, {"0": list(refid)})
 
     def test_bad_native_in_args(self):
         t, native, memid, memory_data, refid, ref = self.prepare()
@@ -254,28 +237,20 @@ class PackPower(_PackBase, unittest.TestCase):
                  "ref": ref,
                  }
         memory_data["counter"] += 1 # pack_power does *not* also pack_memory
-        pp = pack.pack_power(t, child)
-        power = json.loads(pp.power_json)
-        clist = json.loads(pp.power_clist_json)
-        self.failUnlessEqual(set(power.keys()),
-                             set(["static", "native", "memory", "ref"]))
-        self.failUnlessEqual(power["static"],
-                             {"foo": "bar", "not-mem": {"counter": 1}})
-        n = power["native"]
-        self.failUnlessEqual(set(n.keys()), set(["__power__", "clid"]))
-        self.failUnlessEqual(n["__power__"], "native")
-        self.failUnlessEqual(clist[str(n["clid"])], "make_urbject")
-        m = power["memory"]
-        self.failUnlessEqual(set(m.keys()), set(["__power__", "clid"]))
-        self.failUnlessEqual(m["__power__"], "memory")
-        self.failUnlessEqual(clist[str(m["clid"])], memid)
+        packed = pack.pack_power(t, child)
+        power = json.loads(packed)
+        self.failUnlessEqual(power,
+                             {"static": {"foo": "bar",
+                                         "not-mem": {"counter": 1}},
+                              "native": {"__power__": "native",
+                                         "swissnum": "make_urbject"},
+                              "memory": {"__power__": "memory",
+                                         "swissnum": memid},
+                              "ref": {"__power__": "reference",
+                                      "swissnum": list(refid)},
+                              })
         # pack_power does *not* also pack_memory, so this is 0
-        self.failUnlessEqual(Memory(self.db, memid).get_static_data(),
-                             {"counter": 0})
-        r = power["ref"]
-        self.failUnlessEqual(set(r.keys()), set(["__power__", "clid"]))
-        self.failUnlessEqual(r["__power__"], "reference")
-        self.failUnlessEqual(clist[str(r["clid"])], list(refid))
+        self.failUnlessEqual(Memory(self.db, memid).get_data(), {"counter": 0})
 
     def test_good_new_memory(self):
         t, native, memid, memory_data, refid, ref = self.prepare()
@@ -285,41 +260,34 @@ class PackPower(_PackBase, unittest.TestCase):
                  "ref": ref,
                  }
         memory_data["counter"] += 1
-        pp = pack.pack_power(t, child)
-        power = json.loads(pp.power_json)
-        clist = json.loads(pp.power_clist_json)
-        self.failUnlessEqual(set(power.keys()),
-                             set(["static", "native", "memory", "ref"]))
-        self.failUnlessEqual(power["static"],
-                             {"foo": "bar", "not-mem": {"counter": 1}})
-        n = power["native"]
-        self.failUnlessEqual(set(n.keys()), set(["__power__", "clid"]))
-        self.failUnlessEqual(n["__power__"], "native")
-        self.failUnlessEqual(clist[str(n["clid"])], "make_urbject")
-
-        m = power["memory"]
-        self.failUnlessEqual(set(m.keys()), set(["__power__", "clid"]))
-        self.failUnlessEqual(m["__power__"], "memory")
-        new_memid = clist[str(m["clid"])]
+        packed = pack.pack_power(t, child)
+        power = json.loads(packed)
+        new_memid = power["memory"]["swissnum"]
         self.failIfEqual(new_memid, memid)
+        self.failUnlessEqual(power,
+                             {"static": {"foo": "bar",
+                                         "not-mem": {"counter": 1}},
+                              "native": {"__power__": "native",
+                                         "swissnum": "make_urbject"},
+                              "memory": {"__power__": "memory",
+                                         "swissnum": new_memid},
+                              "ref": {"__power__": "reference",
+                                      "swissnum": list(refid)},
+                              })
         mem = Memory(self.db, new_memid)
-        self.failUnlessEqual(mem.get_static_data(),
+        self.failUnlessEqual(mem.get_data(),
                              {"new-memory": {"__power__": "reference",
-                                             "clid": 0}})
-        newmem_data = pack.unpack_memory(t, *mem.get_raw_data())
+                                             "swissnum": list(refid)}})
+        newmem_data = pack.unpack_memory(t, mem.get_raw_data())
         self.failUnlessEqual(newmem_data, {"new-memory": ref})
         self.failUnlessIdentical(newmem_data["new-memory"], ref)
 
-        r = power["ref"]
-        self.failUnlessEqual(set(r.keys()), set(["__power__", "clid"]))
-        self.failUnlessEqual(r["__power__"], "reference")
-        self.failUnlessEqual(clist[str(r["clid"])], list(refid))
 
     def test_bad_forged_power(self):
         t, native, memid, memory_data, refid, ref = self.prepare()
         child = {"static": {"foo": "bar"},
                  "ref": ref,
-                 "bad": {"__power__": "reference", "clid": 0},
+                 "bad": {"__power__": "reference", "swissnum": list(refid)},
                  }
         e = self.failUnlessRaises(ValueError, pack.pack_power, t, child)
         self.failUnlessEqual(str(e), "forbidden __power__ in serializing data")

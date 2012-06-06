@@ -2,28 +2,18 @@
 import json
 from twisted.python import log
 from .util import makeid
-from .common import CList, InnerReference, NativePower
-
-class PackedPower:
-    def __init__(self, power_json, power_clist_json):
-        # power_json is a string with the encoded child-visible power= object
-        self.power_json = power_json
-        # power_clist_json is a string with the encoded clist, that maps from
-        # the power= object's clids to actual swissnums (memids and urbjids)
-        self.power_clist_json = power_clist_json
+from .common import InnerReference, NativePower
 
 class _PowerEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, NativePower) and self._power_packing._allow_native:
             p = self._power_packing
             name = p._turn.get_swissnum_for_object(obj)
-            new_clid = p._clist.add(name)
-            return {p._nonce: "native", "clid": new_clid}
+            return {p._nonce: "native", "swissnum": name}
         if isinstance(obj, InnerReference):
             p = self._power_packing
             refid = p._turn.get_swissnum_for_object(obj)
-            new_clid = p._clist.add(refid)
-            return {p._nonce: "reference", "clid": new_clid}
+            return {p._nonce: "reference", "swissnum": refid}
         return json.JSONEncoder.default(self, obj)
     def _iterencode_dict(self, dct, markers=None):
         # prevent dicts with keys named "__power__". The nonce-based defense
@@ -41,7 +31,6 @@ class _Packing:
         self._turn = turn
         self._allow_native = allow_native
         self._allow_memory = allow_memory
-        self._clist = CList()
         # we translate _nonce into "__power__" when we're done, and otherwise
         # prohibit "__power__" as a property name. This prevents inner code
         # from turning swissnums into references by submitting tricky data
@@ -52,8 +41,7 @@ class _Packing:
 
     def _build_fake_memory(self, old_memory):
         memid = self._turn.put_memory(old_memory)
-        new_clid = self._clist.add(memid)
-        return {self._nonce: "memory", "clid": new_clid}
+        return {self._nonce: "memory", "swissnum": memid}
 
     def _pack(self, child_power):
         if self._allow_memory:
@@ -69,10 +57,7 @@ class _Packing:
                 else:
                     child_power[k] = old_child_power[k]
 
-        new_power_json = self._enc.encode(child_power)
-        new_power_json = new_power_json.replace(self._nonce, "__power__")
-        packed = PackedPower(new_power_json, json.dumps(self._clist))
-        return packed
+        return self._enc.encode(child_power).replace(self._nonce, "__power__")
 
 def pack_power(turn, child_power):
     # updates turn.swissnums, turn.native_powers, and turn.memories . Returns
@@ -96,26 +81,23 @@ class Unpacking:
         self._allow_native = allow_native
         self._allow_memory = allow_memory
 
-    def unpack(self, power_json, clist_json):
+    def unpack(self, power_json):
         # create the inner object. Adds anything necessary to the Turn
-        old_clist = json.loads(clist_json)
         def hook(dct):
             if "__power__" not in dct:
                 return dct
             ptype = dct["__power__"]
-            old_clid = str(dct["clid"]) # points into old_clist
-            # str because 'clist' keys (like all JSON keys) are strings
             if ptype == "native" and self._allow_native:
-                name = old_clist[old_clid]
+                name = dct["swissnum"]
                 return self.turn.get_native_power(name)
             if ptype == "memory":
                 if not self._allow_memory:
                     raise ValueError("only one Memory per Power")
                 self._allow_memory = False
-                memid = old_clist[old_clid]
+                memid = dct["swissnum"]
                 return self.turn.get_memory(memid) # data
             if ptype == "reference":
-                refid = tuple(old_clist[old_clid])
+                refid = tuple(dct["swissnum"])
                 return self.turn.get_reference(refid) # InnerReference
             raise ValueError("unknown power type '%s'" % (ptype,))
         try:
@@ -125,18 +107,18 @@ class Unpacking:
             raise
         return unpacked
 
-def unpack_power(turn, power_json, clist_json):
+def unpack_power(turn, power_json):
     # updates turn.swissnums, turn.native_powers, and turn.memories . Returns
     # inner_power.
     up = Unpacking(turn, allow_native=True, allow_memory=True)
-    return up.unpack(power_json, clist_json)
+    return up.unpack(power_json)
 
-def unpack_memory(turn, power_json, clist_json):
+def unpack_memory(turn, power_json):
     # updates turn.swissnums . Returns data. You need to update turn.memories
     up = Unpacking(turn, allow_native=False, allow_memory=False)
-    return up.unpack(power_json, clist_json)
+    return up.unpack(power_json)
 
-def unpack_args(turn, power_json, clist_json):
+def unpack_args(turn, power_json):
     # updates turn.swissnums . Returns inner_power.
     up = Unpacking(turn, allow_native=False, allow_memory=False)
-    return up.unpack(power_json, clist_json)
+    return up.unpack(power_json)

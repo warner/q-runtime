@@ -12,10 +12,9 @@ from .urbject import create_urbject, create_power, Urbject
 # detected and serialized when creating a new object), and InnerReference
 # objects (which have .send() and .call() methods).
 
-# This is created from a power_json/clist_json pair, in which power_json
-# represents Memory objects with {__power__:"memory",clid=clid}, and
-# InnerReference objects with {__power__:"reference",clid=clid}. clist_json
-# maps clid to memid or (vatid,urbjid)
+# This is created from a power_json, in which power_json represents Memory
+# objects with {__power__:"memory",swissnum:memid}, and InnerReference
+# objects with {__power__:"reference",swissnum:[vatid,urbjid]}.
 
 # To track these, the outer code (Turn) retains a bunch of tables that map
 # from InnerReference to vatid/urbjid and back, and from the Memory-backed
@@ -59,12 +58,12 @@ class Turn:
     def get_power(self, powid):
         if powid not in self.powid_to_power:
             c = self.db.cursor()
-            c.execute("SELECT `power_json`,`power_clist_json` FROM `power`"
-                      " WHERE `powid`=?", (powid,))
+            c.execute("SELECT `power_json` FROM `power` WHERE `powid`=?",
+                      (powid,))
             results = c.fetchall()
             assert results, "no powid %s" % powid
-            (power_json, power_clist_json) = results[0]
-            inner = unpack_power(self, power_json, power_clist_json)
+            (power_json,) = results[0]
+            inner = unpack_power(self, power_json)
             self.powid_to_power[powid] = inner
             self.power_to_powid[id(inner)] = (powid, inner)
         return self.powid_to_power[powid]
@@ -105,8 +104,8 @@ class Turn:
             # now extract the contents
             # unpack_memory() can add items to our swissnums: the
             # invocation gets power from Memory as well as args
-            memory_json, memory_clist_json = memory.get_raw_data()
-            data = unpack_memory(self, memory_json, memory_clist_json)
+            memory_json = memory.get_raw_data()
+            data = unpack_memory(self, memory_json)
             self.memory_data_to_memid[id(data)] = memid
             self.memories[memid] = (memory, data)
         (memory, data) = self.memories[memid]
@@ -131,8 +130,7 @@ class Turn:
             # otherwise, we want to create a new Memory object, with 'data'
             # as the initial contents
             packed = pack_memory(self, data)
-            memid = create_raw_memory(self.db, packed.power_json,
-                                      packed.power_clist_json)
+            memid = create_raw_memory(self.db, packed)
             # note: we do *not* do "self.swissnums[data] = memid" here. We
             # only re-use Memory objects that were passed into an inner
             # function via its power.memory . Passing the same initial data
@@ -150,10 +148,10 @@ class Turn:
     # local_sync_call (when it does o.call), or outbound_message (for
     # o.send). When we're all done, we commit the turn.
 
-    def start_turn(self, code, powid, args_json, args_clist_json, from_vatid,
-                   debug=None):
+    def start_turn(self, code, powid, args_json, from_vatid, debug=None):
+        assert debug is None or callable(debug)
         first_i = Invocation(self, code, powid)
-        rc = first_i._invoke(args_json, args_clist_json, from_vatid, debug)
+        rc = first_i._invoke(args_json, from_vatid, debug)
         self._commit_turn()
         return rc
 
@@ -171,8 +169,7 @@ class Turn:
         target_vatid, target_urbjid = self.swissnums[inner_ref]
         msg = {"command": "invoke",
                "urbjid": target_urbjid,
-               "args_json": packed_args.power_json,
-               "args_clist_json": packed_args.power_clist_json}
+               "args_json": packed_args}
         # queue for delivery at the end of the turn
         self.outbound_messages.append( (target_vatid, json.dumps(msg)) )
         return None # no results-Promises yet
@@ -192,11 +189,13 @@ class Invocation:
         # passed to sandboxed code as power=
         self.inner_power = turn.get_power(powid)
 
-    def _invoke(self, args_json, args_clist_json, from_vatid, debug=None):
-        inner_args = unpack_args(self.turn, args_json, args_clist_json)
+    def _invoke(self, args_json, from_vatid, debug=None):
+        assert debug is None or callable(debug)
+        inner_args = unpack_args(self.turn, args_json)
         return self._execute(inner_args, from_vatid, debug)
 
     def _execute(self, args, from_vatid, debug=None):
+        assert debug is None or callable(debug)
         #print "EVAL <%s>" % (self.code,)
         #print " ARGS <%s>" % (args,)
         code = compile(self.code, "<from vatid %s>" % from_vatid, "exec")
