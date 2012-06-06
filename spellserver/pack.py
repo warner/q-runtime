@@ -1,5 +1,6 @@
 
 import json
+from twisted.python import log
 from .util import makeid
 from .common import CList, InnerReference, NativePower
 
@@ -116,11 +117,11 @@ class Unpacking:
             if ptype == "reference":
                 refid = tuple(old_clist[old_clid])
                 return self.turn.get_reference(refid) # InnerReference
-            raise ValueError("unknown power type %s" % (ptype,))
+            raise ValueError("unknown power type '%s'" % (ptype,))
         try:
             unpacked = json.loads(power_json, object_hook=hook)
         except:
-            print "unpack_power exception, power_json='%s'" % power_json
+            log.msg("unpack_power exception, power_json='%s'" % power_json)
             raise
         return unpacked
 
