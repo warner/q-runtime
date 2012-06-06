@@ -122,3 +122,19 @@ def unpack_args(turn, power_json):
     # updates turn.swissnums . Returns inner_power.
     up = Unpacking(turn, allow_native=False, allow_memory=False)
     return up.unpack(power_json)
+
+
+def list_authorities(power_json, is_args):
+    authorities = set()
+    def hook(dct):
+        power_type = dct.get("__power__")
+        if power_type is not None:
+            if power_type in ("native", "memory") and is_args:
+                raise ValueError("bad power type in args '%s'" % (power_type,))
+            swissnum = dct["swissnum"]
+            if isinstance(swissnum, list): # refid
+                swissnum = tuple(swissnum)
+            authorities.add( (power_type, swissnum) )
+        return dct
+    json.loads(power_json, object_hook=hook) # results ignored
+    return authorities

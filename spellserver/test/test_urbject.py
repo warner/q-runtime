@@ -4,6 +4,7 @@ from twisted.trial import unittest
 from .common import ServerBase
 from ..memory import create_memory, Memory
 from ..urbject import create_urbject, create_power_for_memid, Urbject
+from ..pack import list_authorities
 from ..turn import Turn
 
 F1 = """
@@ -109,11 +110,11 @@ F8a = %r
 def call(args, power):
     power['memory']['counter'] = 0;
     f8a = power['make_urbject'](F8a, add(power, {'memory': {'counter': 0}}))
-    power['memory']['f8a'] = f8a
     # hey f8a: you can change the memory I give you
     f8b = f8a.call({'mem': power['memory']}) # this is synchronous
     # but you can't put it in the power you grant to f8b
     f8b.call({})
+    power['memory']['f8a'] = f8a # to examine later
     power['memory']['f8b'] = f8b
     assert power['memory']['counter'] == 10, power['memory']['counter']
 """ % F8a
@@ -225,3 +226,39 @@ class Test(ServerBase, unittest.TestCase):
         f8b_u = Urbject(self.server, self.db, mem["f8b"]["swissnum"][1])
         f8b_power = t.get_power(f8b_u.get_code_and_powid()[1])
         self.failUnlessEqual(f8b_power["memory"]["counter"], 222)
+
+    def test_authority_graph(self):
+        memid = create_memory(self.db, {"counter": 0})
+        powid = create_power_for_memid(self.db, memid, grant_make_urbject=True)
+        urbjid = create_urbject(self.db, powid, F8)
+        self.invoke_urbjid(urbjid, "{}")
+        u = Urbject(self.server, self.db, urbjid)
+        a1 = list_authorities(u.get_raw_power(), False)
+        self.failUnless( ("native", "make_urbject") in a1, a1)
+        self.failUnless( ("memory", memid) in a1, a1)
+        m = Memory(self.db, memid)
+        md = m.get_data()
+        a2 = list_authorities(m.get_raw_data(), False)
+        # that should contain references to f8a and f8b
+        self.failUnless( ("reference", tuple(md["f8a"]["swissnum"])) in a2, a2)
+        self.failUnless( ("reference", tuple(md["f8b"]["swissnum"])) in a2, a2)
+
+        f8a_u = Urbject(self.server, self.db, md["f8a"]["swissnum"][1])
+        f8a_memid = json.loads(f8a_u.get_raw_power())["memory"]["swissnum"]
+        f8a_m = Memory(self.db, f8a_memid)
+        a3 = list_authorities(f8a_u.get_raw_power(), False)
+        self.failUnless( ("native", "make_urbject") in a3, a3)
+        self.failUnless( ("memory", f8a_memid) in a3, a3)
+        a4 = list_authorities(f8a_m.get_raw_data(), False)
+        self.failIf(a4)
+
+        f8b_u = Urbject(self.server, self.db, md["f8b"]["swissnum"][1])
+        f8b_memid = json.loads(f8b_u.get_raw_power())["memory"]["swissnum"]
+        f8b_m = Memory(self.db, f8b_memid)
+        a5 = list_authorities(f8b_u.get_raw_power(), False)
+        self.failUnless( ("native", "make_urbject") in a5, a5)
+        self.failUnless( ("memory", f8b_memid) in a5, a5)
+        a6 = list_authorities(f8b_m.get_raw_data(), False)
+        self.failIf(a6)
+        # TODO: way to much boilerplate. Needs to to be simpler. This test
+        # should drive the API for Memory, Power, etc

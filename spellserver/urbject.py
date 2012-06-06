@@ -47,3 +47,12 @@ class Urbject:
             raise KeyError("unknown urbjid %s" % self.urbjid)
         code, powid = res[0]
         return code, powid
+
+    def get_raw_power(self):
+        c = self.db.cursor()
+        c.execute("SELECT `powid` FROM `urbjects` WHERE `urbjid`=?",
+                  (self.urbjid,))
+        powid = c.fetchone()[0]
+        c.execute("SELECT `power_json` FROM `power` WHERE `powid`=?", (powid,))
+        power_json = c.fetchone()[0]
+        return power_json
