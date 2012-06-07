@@ -14,15 +14,10 @@ def open_control_panel(so, out, err):
     c = db.cursor()
     baseurl, vatid = webwait.wait(basedir, err)
     print "Node appears to be running, opening browser"
-    c.execute("SELECT name FROM services")
-    services = set([str(row[0]) for row in c.fetchall()])
-    if "relay" in services:
-        url = baseurl+"relay"
-    else:
-        n = util.makeid()
-        c.execute("INSERT INTO webui_initial_nonces VALUES (?)", (n,))
-        db.commit()
-        url = baseurl+"control?nonce=%s" % n
+    n = util.makeid()
+    c.execute("INSERT INTO webui_initial_nonces VALUES (?)", (n,))
+    db.commit()
+    url = baseurl+"control?nonce=%s" % n
     if so["no-open"]:
         print >>out, "Please open: %s" % url
     else:

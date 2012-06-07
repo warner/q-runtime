@@ -193,75 +193,11 @@ $(function() {
                        {
                            if (ui.index == 0) {
                                fill("webport", "#webport");
-                               fill("relay_location", "#relay_location");
-                               fill("relay_connected", "#relay_connected");
-                               fill("pubkey", "#pubkey");
-                           }
-                           else if (ui.index == 2) {
-                               getPendingInvitations();
+                               fill("url", "#url");
+                               fill("vatid", "#vatid");
                            }
                            return true;
                        }
                        });
       $("#send-message").on("click", sendMessage);
-
-      fill("profile-name", "#profile-name");
-      fill_val("profile-name", "#profile-name-input");
-      profileFillIcon();
-      $("#profile-name-open-input").on("click", function(e) {
-                                           htoggle("#profile-name-input");
-                                           htoggle("#profile-name");
-                                           return false;
-                                       });
-      $("#profile-name-input").on("keyup", function(e) {
-                                      if (e.keyCode == 13) {
-                                          profileSetName();
-                                          e.target.blur();
-                                          hhide("#profile-name-input");
-                                          hshow("#profile-name");
-                                      }
-                                      return false;
-                                  });
-      $("#profile-open-icon-uploader")
-          .on({click: function(e) {
-                   $("#profile-icon-upload").click();
-                   return false;
-                   }
-               });
-
-      $("#profile-icon-drop")
-          //.droppable({drop: profileDropIcon2})
-          .on({drop: profileDropIcon,
-               dragenter: function(e) {e.stopPropagation();
-                                       e.preventDefault();
-                                       return false;},
-               dragover: function(e) {e.stopPropagation();
-                                      e.preventDefault();
-                                      return false;}
-              });
-
-      $("#profile-icon-upload").on("change", function(e) {
-                                       profileSetIcon(this.files[0]);
-                                       });
-
-      $("#toggle-pending-invitations").on("click", togglePendingInvitations);
-      $("#invite input").on("click", startInvitation);
-      $("#invite-cancel").on("click", function () {
-                                 $("#invite").slideDown(500);
-                                 $("#invite-prepare-invitation").slideUp(500);
-                                 });
-      $("#send-invitation").on("click", sendInvitation);
-      $("#accept-invitation").on("click", acceptInvitation);
-      var evt = new EventSource("/control/events?token="+token);
-      evt.addEventListener("relay-connection-changed",
-                           function (e) {
-                               var connected = JSON.parse(e.data).message;
-                               $("#relay_connected").text(connected ?
-                                                          "connected" :
-                                                          "not connected");
-                               });
-      getAddressBook();
-      $("#address-book-reload").on("click", getAddressBook);
-      evt.addEventListener("address-book-changed", getAddressBook);
-      evt.addEventListener("invitations-changed", getPendingInvitations);
 });

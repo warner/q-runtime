@@ -1,6 +1,6 @@
-import os
+import os, json
 from twisted.application import service, strports
-from twisted.web import server, static, resource
+from twisted.web import server, static, resource, http
 from twisted.python import log
 from .util import makeid
 
@@ -34,6 +34,36 @@ class Poke(resource.Resource):
     def render_POST(self, request):
         body = request.content.read()
         return self._executor.poke(body)
+
+class API(resource.Resource):
+    def __init__(self, control, db):
+        resource.Resource.__init__(self)
+        self.control = control
+        self.db = db
+
+    def render_POST(self, request):
+        r = json.loads(request.content.read())
+        if not r["token"] in self.control.get_tokens():
+            request.setResponseCode(http.UNAUTHORIZED, "bad token")
+            return "Invalid token"
+        method = str(r["method"])
+        c = self.db.cursor()
+        data = None
+        text = "unknown query"
+        if method == "webport":
+            c.execute("SELECT `webport` FROM `node`")
+            text = c.fetchone()[0]
+        elif method == "url":
+            c.execute("SELECT `url` FROM `vat_urls`")
+            text = c.fetchone()[0]
+        elif method == "vatid":
+            c.execute("SELECT `vatid` FROM `vat_urls`")
+            text = c.fetchone()[0]
+        else:
+            raise ValueError("Unknown method '%s'" % method)
+        if data is not None:
+            return json.dumps(data)
+        return json.dumps({"text": str(text)})
 
 class Control(resource.Resource):
     def __init__(self, db):
@@ -91,12 +121,14 @@ class WebPort(service.MultiService):
 
         root = Root(db)
 
-        c = Control(db)
-        root.putChild("control", c)
-
         # deliver messages to Server
         self.db.cursor().execute("DELETE FROM `webui_access_tokens`")
         self.db.commit()
+        c = Control(db)
+        capi = API(c, db)
+        c.putChild("api", capi)
+        root.putChild("control", c)
+
         mi = MessageInput(node.server)
         root.putChild("messages", mi)
         root.putChild("poke", Poke(node.server.executor))
