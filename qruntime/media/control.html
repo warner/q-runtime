@@ -23,7 +23,7 @@
 <div id="tabs">
   <ul>
     <li><a href="#tabs-node-control">Node Control</a></li>
-    <li><a href="#tabs-address-book"><s>Address Book</s></a></li>
+    <li><a href="#tabs-object-list">Object List</a></li>
     <li><a href="#tabs-invitations"><s>Accept an Invitation</s></a></li>
   </ul>
   <div id="tabs-node-control">
@@ -40,9 +40,9 @@
       </ul>
     </div>
   </div>
-  <div id="tabs-address-book">
-    <h3>Address Book
-      <span class="small"><a id="address-book-reload" href="#">reload</a></span>
+  <div id="tabs-object-list">
+    <h3>Object List
+      <span class="small"><a id="object-list-reload" href="#">reload</a></span>
     </h3>
 
     <div id="address-book-controls">
@@ -62,26 +62,22 @@
       </div>
     </div>
 
-    <div id="address-book-main">
-      <div id="address-book-body">
+    <div id="object-list-main">
+      <div id="object-list-body">
         <div>
-          <img id="address-book-icon" src="">
-          <span class="address-book-icon-right">
+          <span class="object-list-icon-right">
             <span class="gray">Petname:</span>
-            <span id="address-book-petname"></span>
+            <span id="object-list-petname"></span>
           </span>
         </div>
-        <div class="address-book-attributes">
-          <div><span class="gray">Selfname:</span>
-            <span id="address-book-selfname"></span>
-          </div>
-          <div><span class="gray">Their Pubkey:</span>
-            <span id="address-book-their-pubkey"></span>
+        <div class="object-list-attributes">
+          <div><span class="gray">Object ID:</span>
+            <span id="object-list-urbjid"></span>
           </div>
         </div>
       </div>
-      <div id="address-book-sidebar">
-        <ul id="address-book"></ul>
+      <div id="object-list-sidebar">
+        <ul id="object-list"></ul>
       </div>
     </div>
 

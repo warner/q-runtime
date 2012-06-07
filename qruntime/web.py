@@ -65,6 +65,12 @@ class API(resource.Resource):
             vatid, urbjid = parse_spid(args["to"])
             self.executor.send_invoke(vatid, urbjid, args["args"])
             text = "ok"
+        elif method == "getAllObjects":
+            c.execute("SELECT `urbjid` FROM `urbjects`")
+            data = {"objects": [{"urbjid": r[0],
+                                 #"petname": XXX,
+                                 }
+                                for r in c.fetchall()]}
         else:
             raise ValueError("Unknown method '%s'" % method)
         if data is not None:

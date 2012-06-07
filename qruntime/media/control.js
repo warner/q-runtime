@@ -67,12 +67,10 @@ function profileDropIcon(e, ui) {
     return false;
 };
 
-function selectAddressBookEntry(e) {
-    var d = $(this).data("entry");
-    $("#address-book-petname").text(d.petname);
-    $("#address-book-icon").attr("src", d.icon_data);
-    $("#address-book-selfname").text(d.selfname);
-    $("#address-book-their-pubkey").text(d.their_pubkey);
+function selectObjectListEntry(e) {
+    var d = $(this).data("d");
+    $("#object-list-petname").text(d.petname);
+    $("#object-list-urbjid").text(d.urbjid);
     return false;
 };
 
@@ -81,17 +79,17 @@ function deleteAddressBookEntry(e) {
     doAPI("deleteAddressBookEntry", {petname: d.petname});
 };
 
-function getAddressBook() {
-    doAPI("getAddressBook", {},
+function populateObjectList() {
+    doAPI("getAllObjects", {},
           function (data) {
-              var book = $("#address-book");
+              var book = $("#object-list");
               book.empty();
-              for (var i=0; i<data.length; i++) {
-                  var d = data[i];
+              for (var i=0; i<data.objects.length; i++) {
+                  var d = data.objects[i];
                   var entry = $("<li>");
-                  entry.text(d.petname);
-                  entry.data("entry", d);
-                  entry.on("click", selectAddressBookEntry);
+                  entry.text(d.urbjid);
+                  entry.data("d", d);
+                  entry.on("click", selectObjectListEntry);
                   book.append(entry);
                   /*
                   var entry = $("#templates .address-book-entry").clone();
@@ -200,4 +198,6 @@ $(function() {
                        }
                        });
       $("#send-message").on("click", sendMessage);
+      populateObjectList();
+      $("#object-list-reload").on("click", populateObjectList);
 });
