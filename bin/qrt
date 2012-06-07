@@ -2,14 +2,14 @@
 
 import sys, os
 
-# this 'ssp' script is in bin/ssp, below the source directory, so we want to
+# this 'qrt' script is in bin/qrt, below the source directory, so we want to
 # add the parent directory to sys.path.
 me = os.path.abspath(sys.argv[0])
 sourcedir = os.path.dirname(os.path.dirname(me))
 sys.path.insert(0, sourcedir)
 
 # thus this should always work:
-from spellserver.scripts.runner import run
+from qruntime.scripts.runner import run
 
 # Delegate everything else off to the runner, which must be careful to not
 # import too much unless the command specifically asks for it.

@@ -23,7 +23,7 @@ def start(so, out, err):
     basedir = os.path.abspath(so["basedir"])
     dbfile = os.path.join(basedir, "control.db")
     if not (os.path.isdir(basedir) and os.path.exists(dbfile)):
-        print >>err, "'%s' doesn't look like a spellserver basedir, quitting" % basedir
+        print >>err, "'%s' doesn't look like a qruntime basedir, quitting" % basedir
         return 1
     # now prepare to turn into a twistd process
     os.chdir(basedir)
@@ -65,7 +65,7 @@ def stop(so, out, err):
     basedir = so["basedir"]
     dbfile = os.path.join(basedir, "control.db")
     if not (os.path.isdir(basedir) and os.path.exists(dbfile)):
-        print >>err, "'%s' doesn't look like a spellserver basedir, quitting" % basedir
+        print >>err, "'%s' doesn't look like a qruntime basedir, quitting" % basedir
         return 1
     print >>out, "STOPPING", basedir
     pidfile = os.path.join(basedir, "twistd.pid")

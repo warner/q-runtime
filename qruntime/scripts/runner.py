@@ -1,6 +1,6 @@
 
 # Only import stdlib at the top level. Do not import anything from our
-# dependency set, or parts of spellserver that require things from the
+# dependency set, or parts of qruntime that require things from the
 # dependency set. It is only safe to import such things at runtime, inside a
 # command that specifically needs it.
 
@@ -15,7 +15,7 @@ except ImportError:
     print >>sys.stderr, "Please run 'python setup.py build'"
     sys.exit(1)
 
-DEFAULT_BASEDIR = os.path.expanduser("~/.spellserver")
+DEFAULT_BASEDIR = os.path.expanduser("~/.qruntime")
 
 class BasedirParameterMixin:
     optParameters = [
@@ -68,7 +68,7 @@ class PokeOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
 class TestOptions(usage.Options):
     def parseArgs(self, *test_args):
         if not test_args:
-            test_args = ["spellserver"]
+            test_args = ["qruntime"]
         self.test_args = test_args
 
 class InstallOptions(BasedirParameterMixin, BasedirArgument, usage.Options):

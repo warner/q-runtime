@@ -10,7 +10,7 @@ def gossip(so, out, err):
     for basedir in basedirs:
         dbfile = os.path.join(basedir, "control.db")
         if not (os.path.isdir(basedir) and os.path.exists(dbfile)):
-            print >>err, "'%s' doesn't look like a spellserver basedir, quitting" % basedir
+            print >>err, "'%s' doesn't look like a qruntime basedir, quitting" % basedir
             return 1
         sqlite, db = database.get_db(dbfile, err)
         c = db.cursor()
