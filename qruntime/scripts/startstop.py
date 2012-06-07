@@ -1,6 +1,6 @@
 import os, time, signal
 # Twisted (and our other dependencies) are available, but do not import
-# anything that needs the reactor at this top level, so that 'ssp start
+# anything that needs the reactor at this top level, so that 'qrt start
 # basedir --reactor=foo' will work
 from twisted.scripts import twistd
 from twisted.python import usage
@@ -33,7 +33,7 @@ def start(so, out, err):
         twistd_config.parseOptions(twistd_args)
     except usage.error, ue:
         print twistd_config
-        print "ssp %s: %s" % (so.subCommand, ue)
+        print "qrt %s: %s" % (so.subCommand, ue)
         return 1
     twistd_config.loadedPlugins = {"XYZ": MyPlugin(basedir, dbfile)}
     # this spawns off a child process, and the parent calls os._exit(0), so

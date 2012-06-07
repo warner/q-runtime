@@ -39,7 +39,7 @@ class Node(service.MultiService):
         w = web.WebPort(self.basedir, self, self.db)
         w.setServiceParent(self)
         # clear initial nonces. It's important to do this before the web port
-        # starts listening, to avoid a race with 'ssp open' adding a new
+        # starts listening, to avoid a race with 'qrt open' adding a new
         # nonce
         c = self.db.cursor()
         c.execute("DELETE FROM webui_initial_nonces")

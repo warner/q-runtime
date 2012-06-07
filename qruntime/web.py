@@ -48,14 +48,14 @@ class Control(resource.Resource):
     def render_GET(self, request):
         request.setHeader("content-type", "text/plain")
         if "nonce" not in request.args:
-            return "Please use 'ssp open' to get to the control panel\n"
+            return "Please use 'qrt open' to get to the control panel\n"
         nonce = request.args["nonce"][0]
         c = self.db.cursor()
         c.execute("SELECT nonce FROM webui_initial_nonces")
         nonces = [str(row[0]) for row in c.fetchall()]
         if nonce not in nonces:
             return ("Sorry, that nonce is expired or invalid,"
-                    " please run 'ssp open' again\n")
+                    " please run 'qrt open' again\n")
         # good nonce, single-use
         c.execute("DELETE FROM webui_initial_nonces WHERE nonce=?", (nonce,))
         # this token lasts as long as the node is running: it is cleared at
@@ -71,7 +71,7 @@ class Control(resource.Resource):
         if token not in self.get_tokens():
             request.setHeader("content-type", "text/plain")
             return ("Sorry, this session token is expired,"
-                    " please run 'ssp open' again\n")
+                    " please run 'qrt open' again\n")
         return read_media("control.html") % {"token": token}
 
 

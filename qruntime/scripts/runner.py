@@ -8,7 +8,7 @@ import os, sys
 
 try:
     # do not import anything from Twisted that requires the reactor, to allow
-    # 'ssp start' to choose a reactor itself
+    # 'qrt start' to choose a reactor itself
     from twisted.python import usage
 except ImportError:
     print >>sys.stderr, "Unable to import Twisted."
@@ -28,7 +28,7 @@ class BasedirArgument:
 
 class StartArguments(BasedirArgument):
     def parseArgs(self, basedir=None, *twistd_args):
-        # this can't handle e.g. 'ssp start --nodaemon', since then
+        # this can't handle e.g. 'qrt start --nodaemon', since then
         # --nodaemon looks like a basedir. Consider using (self, *all_args)
         # and searching for "--" to indicate the start of the twistd_args
         self.twistd_args = twistd_args
@@ -76,7 +76,7 @@ class InstallOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
         BasedirArgument.parseArgs(self, basedir)
         self["codedir"] = codedir
     def getSynopsis(self):
-        return "Usage: ssp install BASEDIR CODEDIR"
+        return "Usage: qrt install BASEDIR CODEDIR"
     longdesc = """\
 Take a directory of source code, and install it into the given (local)
 server. For now, the directory must contain one or more .py files, with one
@@ -97,7 +97,7 @@ class SendOptions(BasedirParameterMixin, usage.Options):
         self["spid"] = spid
         self["args"] = args
     def getSynopsis(self):
-        return "Usage: ssp admin send SPID [ARGS-JSON]"
+        return "Usage: qrt admin send SPID [ARGS-JSON]"
 
 class CreateMemoryOptions(BasedirParameterMixin, BasedirArgument,
                           usage.Options):
@@ -106,11 +106,11 @@ class CreateMemoryOptions(BasedirParameterMixin, BasedirArgument,
         ]
 
     def getSynopsis(self):
-        return "Usage: ssp admin create-memory BASEDIR"
+        return "Usage: qrt admin create-memory BASEDIR"
 
 class ListMemoryOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
     def getSynopsis(self):
-        return "Usage: ssp admin list-memory BASEDIR"
+        return "Usage: qrt admin list-memory BASEDIR"
 
 class DumpMemoryOptions(BasedirParameterMixin, BasedirArgument,
                           usage.Options):
@@ -119,7 +119,7 @@ class DumpMemoryOptions(BasedirParameterMixin, BasedirArgument,
         self["memid"] = memid
 
     def getSynopsis(self):
-        return "Usage: ssp admin dump-memory BASEDIR MEMID"
+        return "Usage: qrt admin dump-memory BASEDIR MEMID"
 
 class CreateUrbjectOptions(BasedirParameterMixin, BasedirArgument,
                            usage.Options):
@@ -149,11 +149,11 @@ class CreateUrbjectOptions(BasedirParameterMixin, BasedirArgument,
         self["code-file"] = codefile
 
     def getSynopsis(self):
-        return "Usage: ssp admin create-urbject BASEDIR CODEFILE.py"
+        return "Usage: qrt admin create-urbject BASEDIR CODEFILE.py"
 
 class ListUrbjectOptions(BasedirParameterMixin, BasedirArgument, usage.Options):
     def getSynopsis(self):
-        return "Usage: ssp admin list-urbjects BASEDIR"
+        return "Usage: qrt admin list-urbjects BASEDIR"
 
 class DumpUrbjectOptions(BasedirParameterMixin, BasedirArgument,
                           usage.Options):
@@ -162,7 +162,7 @@ class DumpUrbjectOptions(BasedirParameterMixin, BasedirArgument,
         self["urbjid"] = urbjid
 
     def getSynopsis(self):
-        return "Usage: ssp admin dump-memory BASEDIR MEMID"
+        return "Usage: qrt admin dump-memory BASEDIR MEMID"
 
 class AdminOptions(usage.Options):
     subCommands = [
@@ -216,7 +216,7 @@ def do_admin(options, stdout, stderr):
     return f(so, stdout, stderr)
 
 class Options(usage.Options):
-    synopsis = "\nUsage: ssp <command>"
+    synopsis = "\nUsage: qrt <command>"
     subCommands = [
         ("create-node", None, CreateNodeOptions, "Create a node"),
         ("start", None, StartNodeOptions, "Start a node"),
@@ -236,7 +236,7 @@ class Options(usage.Options):
 
     def getUsage(self, **kwargs):
         t = usage.Options.getUsage(self, **kwargs)
-        return t + "\nPlease run 'ssp <command> --help' for more details on each command.\n"
+        return t + "\nPlease run 'qrt <command> --help' for more details on each command.\n"
 
     def postOptions(self):
         if not hasattr(self, 'subOptions'):
