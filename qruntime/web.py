@@ -2,7 +2,7 @@ import os, json
 from twisted.application import service, strports
 from twisted.web import server, static, resource, http
 from twisted.python import log
-from .util import makeid
+from .util import makeid, parse_spid
 
 MEDIA_DIRNAME = os.path.join(os.path.dirname(__file__), "media")
 
@@ -36,10 +36,11 @@ class Poke(resource.Resource):
         return self._executor.poke(body)
 
 class API(resource.Resource):
-    def __init__(self, control, db):
+    def __init__(self, control, db, executor):
         resource.Resource.__init__(self)
         self.control = control
         self.db = db
+        self.executor = executor
 
     def render_POST(self, request):
         r = json.loads(request.content.read())
@@ -47,6 +48,7 @@ class API(resource.Resource):
             request.setResponseCode(http.UNAUTHORIZED, "bad token")
             return "Invalid token"
         method = str(r["method"])
+        args = r["args"]
         c = self.db.cursor()
         data = None
         text = "unknown query"
@@ -59,6 +61,10 @@ class API(resource.Resource):
         elif method == "vatid":
             c.execute("SELECT `vatid` FROM `vat_urls`")
             text = c.fetchone()[0]
+        elif method == "sendMessage":
+            vatid, urbjid = parse_spid(args["to"])
+            self.executor.send_invoke(vatid, urbjid, args["args"])
+            text = "ok"
         else:
             raise ValueError("Unknown method '%s'" % method)
         if data is not None:
@@ -113,7 +119,7 @@ class Root(resource.Resource):
         self.putChild("media", static.File(MEDIA_DIRNAME))
 
 class WebPort(service.MultiService):
-    def __init__(self, basedir, node, db):
+    def __init__(self, basedir, node, db, executor):
         service.MultiService.__init__(self)
         self.basedir = basedir
         self.node = node
@@ -125,7 +131,7 @@ class WebPort(service.MultiService):
         self.db.cursor().execute("DELETE FROM `webui_access_tokens`")
         self.db.commit()
         c = Control(db)
-        capi = API(c, db)
+        capi = API(c, db, executor)
         c.putChild("api", capi)
         root.putChild("control", c)
 

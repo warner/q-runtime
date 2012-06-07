@@ -36,7 +36,7 @@ class Node(service.MultiService):
         self.server.setServiceParent(self)
 
     def init_webport(self):
-        w = web.WebPort(self.basedir, self, self.db)
+        w = web.WebPort(self.basedir, self, self.db, self.server.executor)
         w.setServiceParent(self)
         # clear initial nonces. It's important to do this before the web port
         # starts listening, to avoid a race with 'qrt open' adding a new
