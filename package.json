@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "lib": "js/lib",
   "dependencies": {
-    "express": "2.5.9"
+    "node-djb-nacl": "git+https://github.com/asutherland/node-djb-nacl"
   },
   "scripts": {
     "qrt": "./js/scripts/qrt.js"
