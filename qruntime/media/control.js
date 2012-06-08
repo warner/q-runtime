@@ -68,9 +68,19 @@ function profileDropIcon(e, ui) {
 };
 
 function selectObjectListEntry(e) {
-    var d = $(this).data("d");
-    $("#object-list-petname").text(d.petname);
-    $("#object-list-urbjid").text(d.urbjid);
+    var id = $(this).data("id");
+    var info = $(this).data("info");
+    $("#object-list-petname").text(info.petname);
+    $("#object-list-id").text(id);
+    $("#object-list-type").text(info.type);
+    var codeid = "N/A";
+    if (info.type == "urbject")
+        codeid = info.codeid;
+    $("#object-list-codeid").text(codeid);
+    var numpowers = "N/A";
+    if (info.type == "power" || info.type == "memory")
+        numpowers = info.powers.length;
+    $("#object-list-numpowers").text(numpowers);
     return false;
 };
 
@@ -79,27 +89,43 @@ function deleteAddressBookEntry(e) {
     doAPI("deleteAddressBookEntry", {petname: d.petname});
 };
 
+function _populateObjectList(allObjects, objectGraph) {
+    var book = $("#object-list");
+    book.empty();
+    var id;
+    var allIDs = [];
+    for (id in objectGraph.graph)
+        allIDs.push(id);
+    allIDs.sort();
+    for (var i=0; i<allIDs.length; i++) {
+        id = allIDs[i];
+        var info = objectGraph.graph[id];
+        var entry = $("<li>");
+        entry.text(id);
+        entry.data("id", id);
+        entry.data("info", info);
+        entry.on("click", selectObjectListEntry);
+        book.append(entry);
+        /*
+         var entry = $("#templates .address-book-entry").clone();
+         entry.find(".name").text(d.petname);
+         entry.find(".icon").attr("src", d.icon_data);
+         entry.data("entry", d);
+         entry.find(".delete").on("click", deleteAddressBookEntry);
+         book.append(entry); */
+    }
+};
+
 function populateObjectList() {
     doAPI("getAllObjects", {},
-          function (data) {
-              var book = $("#object-list");
-              book.empty();
-              for (var i=0; i<data.objects.length; i++) {
-                  var d = data.objects[i];
-                  var entry = $("<li>");
-                  entry.text(d.urbjid);
-                  entry.data("d", d);
-                  entry.on("click", selectObjectListEntry);
-                  book.append(entry);
-                  /*
-                  var entry = $("#templates .address-book-entry").clone();
-                  entry.find(".name").text(d.petname);
-                  entry.find(".icon").attr("src", d.icon_data);
-                  entry.data("entry", d);
-                  entry.find(".delete").on("click", deleteAddressBookEntry);
-                  book.append(entry); */
-              }
-          });
+          function (allObjects) {
+              doAPI("getObjectGraph", {},
+                    function(objectGraph) {
+                        _populateObjectList(allObjects, objectGraph);
+                        }
+                   );
+          }
+         );
     return false;
 };
 

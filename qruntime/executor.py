@@ -1,8 +1,10 @@
 
 import json
+from hashlib import sha256
 from twisted.application import service
 from twisted.python import log
 from .urbject import create_power_for_memid, Urbject
+from .pack import list_authorities
 from .turn import Turn
 from .memory import create_memory
 from . import util
@@ -88,3 +90,49 @@ class ExecutionServer(service.Service):
         self._comms_server.trigger_inbound()
         self._comms_server.trigger_outbound()
         return "I am poked"
+
+    def get_object_graph(self):
+        # all potential objects are in the database, so we just pull the
+        # whole thing into RAM and give it to the frontend to render as they
+        # please. The resulting 'graph' object will look like:
+        #
+        #  URBJID: {type: "urbject", powid: POWID, codeid: SHA256(code)}
+        #  POWID:  {type: "power", powers: [POWERS..]}
+        #  MEMID:  {type: "memory", powers: [POWERS..]}
+        #
+        # where each element of POWERS is one of:
+        #
+        #  POWER: {type: "native", swissnum: "make_urbject"/..}
+        #  POWER: {type: "reference", swissnum: SPID}
+        #  POWER: {type: "memory", swissnum: MEMID}
+        #
+        c = self.db.cursor()
+        graph = {}
+        c.execute("SELECT `urbjid`,`powid`,`code` FROM `urbjects`")
+        for (urbjid,powid,code) in c.fetchall():
+            graph[urbjid] = {"type": "urbject",
+                             "powid": powid,
+                             "codeid": sha256(code).hexdigest()}
+        c.execute("SELECT `powid`,`power_json` FROM `power`")
+        for (powid,power_json) in c.fetchall():
+            powers = []
+            for (power_type, swissnum) in list_authorities(power_json, False):
+                if power_type == "reference":
+                    vatid, urbjid = swissnum
+                    swissnum = util.make_spid(vatid, urbjid)
+                powers.append({"type": power_type,
+                               "swissnum": swissnum})
+            graph[powid] = {"type": "power",
+                            "powers": powers}
+        c.execute("SELECT `memid`,`data_json` FROM `memory`")
+        for (memid,data_json) in c.fetchall():
+            powers = []
+            for (power_type, swissnum) in list_authorities(data_json, False):
+                if power_type == "reference":
+                    vatid, urbjid = swissnum
+                    swissnum = util.make_spid(vatid, urbjid)
+                powers.append({"type": power_type,
+                               "swissnum": swissnum})
+            graph[memid] = {"type": "memory",
+                            "powers": powers}
+        return graph

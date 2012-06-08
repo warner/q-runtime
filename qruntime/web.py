@@ -71,6 +71,8 @@ class API(resource.Resource):
                                  #"petname": XXX,
                                  }
                                 for r in c.fetchall()]}
+        elif method == "getObjectGraph":
+            data = {"graph": self.executor.get_object_graph()}
         else:
             raise ValueError("Unknown method '%s'" % method)
         if data is not None:
