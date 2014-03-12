@@ -49,7 +49,7 @@ sequential nonces. Messages are delivered over HTTP to the target Vat, but
 future work may include relays or DHT-style delivery schemes.
 
 In essence, you install little bundles of code into the Vat, and get back an
-unforgeably identifier for each, then can send messages at them from afar,
+unforgeable identifier for each, then can send messages at them from afar,
 and they'll get executed. The code can remember previous messages and send
 out new ones.
 
@@ -81,7 +81,7 @@ using Object.freeze() and closure-protected private state in the references
 handed to it, hostile JS code can be safely run in a confined sandbox. (As
 usual, the hostile code can still DoS the Vat with an infinite loop: future
 extensions could have code purchase compute cycles ahead of time and suffer
-termination ben those limits are exceeded).
+termination when those limits are exceeded).
 
 Note that this project targets ES5-Strict -compliant JS engines, and will
 probably want some Harmony features like WeakMaps and Proxies. It remains to
@@ -166,7 +166,7 @@ serialized ``args`` object from the caller. Both ``args`` and ``memory`` can
 contain anything JSON-serializeable, plus "References" that point to other
 objects.
 
-As the function runs, any ``Reference``s it holds (either received from the
+As the function runs, any ``Reference`` it holds (either received from the
 caller in ``args``, from its creator in ``power``, or from a previous
 incarnation of itself in ``power.memory``) can be used to send messages to
 other objects. These objects might live in the same Vat, or on some remote
@@ -229,9 +229,9 @@ the same JS or Python object (both have access to the same state, but do
 different things with it).
 
 The other simple power to grant is an empty object (or ``None`` in python).
-This gives the child no power (not even memory). The only side-effects that
-the child will be able to cause will be through messages sent to it. This is
-like the DeepFrozen auditor in E.
+This gives the child no power (not even memory). The only way for the child
+to affect the world is if you pass it an argument that contains power, or if
+you act upon the value it returns. This is like the DeepFrozen auditor in E.
 
 Other forms of power can be granted by passing other things as the second
 argument of ``make_object``. ``newpower`` is parsed to figure out what the
