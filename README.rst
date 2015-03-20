@@ -137,7 +137,9 @@ unique argument data.
 Other Old Stuff
 ---------------
 
- bunch of "objects", each of which is a piece of code
+(maybe out-of-date)
+
+The Vat contains a bunch of "objects", each of which is a piece of code
 (implementing a single method) that gets access to some "power". This Power
 can include persistent storage (named "Memory"), "references" to other
 objects (eventual-send messages to remote objects, both eventual-send and
@@ -306,11 +308,11 @@ synchronous/blocking function calls, with the usual re-entrancy hazards
 thereof. They can also return values::
 
  # Javascript
- o.call(args)
- Q.call(args)
+ results = o.call(args)
+ results = Q.call(o, args)
 
  # Python
- o.call(args)
+ results = o.call(args)
 
 Immediate calls can also accept non-JSON-serializable arguments, like
 functions. Invoking ``call()`` on a remote object will throw an error.
