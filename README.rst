@@ -133,3 +133,22 @@ missing. For the common case of executing a small set of program-chain
 prefixes (e.g. "methods") with a variety of suffixes (e.g. "arguments"), each
 invocation should require only a single message that mostly consists of
 unique argument data.
+
+Persistence
+-----------
+
+Every program (including the root) is effectively loaded from scratch for
+each delivered message. To provide Waterken-style checkpoint semantics, given
+our language's lack of orthogonal persistence, we cannot rely upon state
+stored in RAM (or anywhere outside of the checkpoint). To guarantee
+deterministic execution, we must not even look at such state: the program
+must be shut down after every message. (In practice, the root-power.js module
+gets to do whatever it wants, but if it wants to provide checkpointing and
+determinism, it needs to follow these rules).
+
+So the only way to hold persistent data is for the root program to use
+external storage (disk or database), and to grant (limited) access to
+subprograms. You might think of this as granting a database view to a
+subprogram, or offering a "set_state()" function which can only modify a row
+dedicated to a particular client (distinguished by looking at the particular
+key which signed the client message).
