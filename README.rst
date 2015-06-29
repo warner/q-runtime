@@ -152,3 +152,39 @@ subprograms. You might think of this as granting a database view to a
 subprogram, or offering a "set_state()" function which can only modify a row
 dedicated to a particular client (distinguished by looking at the particular
 key which signed the client message).
+
+Accounts
+--------
+
+The root server has no user accounts: any notion of secrets (things which are
+to be revealed to some callers but not to others) must be implemented by the
+root program or one of the subprograms.
+
+
+Delegation and Attenuation
+--------------------------
+
+This "signed subprogram" technique enables easy attenuation and delegation of
+authority. If Alice has access to something, she can easily grant Bob a
+subset of that access by giving him a prefix-program and signing key. The
+attenuation is mediated by a fully-functional subprogram of her choosing. For
+example, she might enforce time limits, by writing a program that passes all
+messages through to the parent until a clock runs out. Or her program might
+restrict message calls to have arguments that match a certain pattern.
+
+Typical access-control systems do not make this so easy. [ACLs
+don't](http://waterken.net/), as the simplest form of delegation is to share
+a password: un-attenuated and nigh-irrevocable. OAuth2 services occasionally
+provide "scopes" to attenuate authority, but all tokens must be obtained from
+the original issuer (no offline attenuation), and it requires extensive
+server-side changes to create new categories of authority, so the set of
+possible attenuations is usually quite limited. Amazon's IAM functionality
+provides the most fine-grained controls on the market, but (like OAuth2) lack
+offline attenuation and require server-side changes to add new categories.
+
+Even Vat-style objcap systems require Alice to construct and host an object
+to mediate attenuated access. These objects can be hosted on the same Vat as
+the unattenuated target (minimizing latency), but Alice must create the facet
+online, then deliver a reference to the facet to Bob. Signed subprograms
+allow Alice to construct the facet offline. She effectively delivers the
+authority to construct the facet to Bob directly.
